@@ -396,6 +396,10 @@ class StreamDeckEditor:
         """Generate the Pi script with current config"""
         config = self.config
         pages_code = json.dumps(config["pages"], indent=4)
+        # Convert JSON syntax to Python syntax
+        pages_code = pages_code.replace(': null', ': None').replace(':null', ':None')
+        pages_code = pages_code.replace(': true', ': True').replace(':true', ':True')
+        pages_code = pages_code.replace(': false', ': False').replace(':false', ':False')
         bg_color = config.get("background_color", [25, 25, 35])
         windows_ip = self.ip_entry.get()
         
