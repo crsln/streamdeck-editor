@@ -383,6 +383,13 @@ class GiphyBrowser:
         except Exception as e:
             self.window.after(0, lambda: self.status_label.config(text=f"Download failed: {e}"))
 
+DASHBOARD_TYPES = {
+    "system_monitor": {"name": "System Monitor", "refresh_interval": 2},
+    "windows_pc": {"name": "Windows PC", "refresh_interval": 2},
+    "pihole": {"name": "Pi-hole", "refresh_interval": 5},
+    "docker": {"name": "Docker", "refresh_interval": 3},
+}
+
 AVAILABLE_ACTIONS = [
     "media_playpause", "media_next", "media_prev", "media_stop",
     "volume_up", "volume_down", "volume_mute",
@@ -415,6 +422,7 @@ DEFAULT_CONFIG = {
     "pages": [
         {
             "name": "Page 1",
+            "type": "button",
             "buttons": [
                 {"label": "", "action": "", "color": [60, 60, 80], "icon": None, "background": None, "app_path": None}
                 for _ in range(6)
@@ -435,6 +443,7 @@ class StreamDeckEditor:
         os.makedirs(PROFILES_DIR, exist_ok=True)
 
         self.config = self.load_config()
+        self.migrate_config()
         self.library = self.load_library()
         self.current_page = 0
         self.selected_button = None
@@ -455,6 +464,29 @@ class StreamDeckEditor:
             except:
                 pass
         return copy.deepcopy(DEFAULT_CONFIG)
+
+    def migrate_config(self):
+        """Add 'type' field to pages that don't have it (backwards compatibility)"""
+        for page in self.config.get("pages", []):
+            if "type" not in page:
+                if "buttons" in page:
+                    page["type"] = "button"
+                else:
+                    page["type"] = "dashboard"
+
+    def is_dashboard_page(self, page_idx=None):
+        if page_idx is None:
+            page_idx = self.current_page
+        page = self.config["pages"][page_idx]
+        return page.get("type") == "dashboard"
+
+    def get_button_pages(self):
+        """Return only button-type pages (for script generation)"""
+        return [p for p in self.config["pages"] if p.get("type", "button") == "button"]
+
+    def get_dashboard_pages(self):
+        """Return only dashboard-type pages"""
+        return [p for p in self.config["pages"] if p.get("type") == "dashboard"]
 
     def save_config(self):
         with open(CONFIG_FILE, 'w') as f:
@@ -582,6 +614,9 @@ class StreamDeckEditor:
 
         tk.Button(nav_frame, text="+ Page", command=self.add_page,
                  bg="#2d6a4f", fg="white", font=("Segoe UI", 10)).pack(side=tk.LEFT, padx=15)
+
+        tk.Button(nav_frame, text="+ Dashboard", command=self.add_dashboard_page,
+                 bg="#4a2d6a", fg="white", font=("Segoe UI", 10)).pack(side=tk.LEFT, padx=5)
 
         tk.Button(nav_frame, text="- Page", command=self.delete_page,
                  bg="#6a2d2d", fg="white", font=("Segoe UI", 10)).pack(side=tk.LEFT, padx=5)
@@ -722,6 +757,10 @@ class StreamDeckEditor:
         if self.dragging_button is None:
             return
 
+        if self.is_dashboard_page():
+            self.dragging_button = None
+            return
+
         # Get mouse position relative to preview canvas
         x = self.preview_canvas.winfo_pointerx() - self.preview_canvas.winfo_rootx()
         y = self.preview_canvas.winfo_pointery() - self.preview_canvas.winfo_rooty()
@@ -797,7 +836,64 @@ class StreamDeckEditor:
         self.preview_canvas.configure(bg=bg_hex)
 
         page = self.config["pages"][self.current_page]
-        buttons = page["buttons"]
+
+        # Dashboard pages: show info label instead of button grid
+        if page.get("type") == "dashboard":
+            self.button_rects = []
+            dashboard_type = page.get("dashboard_type", "unknown")
+            display_name = DASHBOARD_TYPES.get(dashboard_type, {}).get("name", dashboard_type)
+            refresh = page.get("refresh_interval", 2)
+
+            # Draw dashboard placeholder
+            self.preview_canvas.create_rectangle(40, 40, 440, 200, fill="#1e1e3a", outline="#4a4a8a", width=2)
+            self.preview_canvas.create_text(240, 90, text=display_name,
+                                            fill="#9b59b6", font=("Segoe UI", 20, "bold"))
+            self.preview_canvas.create_text(240, 125, text="Dashboard Page",
+                                            fill="#888", font=("Segoe UI", 12))
+            self.preview_canvas.create_text(240, 155, text=f"Refresh: {refresh}s",
+                                            fill="#666", font=("Segoe UI", 10))
+            self.preview_canvas.create_text(240, 180, text="(rendered on Pi at runtime)",
+                                            fill="#555", font=("Segoe UI", 9, "italic"))
+
+            # Navigation bar
+            nav_y = 320 - 70
+            self.preview_canvas.create_rectangle(0, nav_y, 480, 320, fill="#282840", outline="")
+            page_text = f"{self.current_page + 1}/{len(self.config['pages'])}"
+            self.preview_canvas.create_text(240, nav_y + 35, text=page_text,
+                                            fill="#aaa", font=("Segoe UI", 14))
+            self.page_label.config(text=f"Page {self.current_page + 1}/{len(self.config['pages'])} - {display_name}")
+
+            # Clear button editor for dashboard pages
+            for widget in self.editor_frame.winfo_children():
+                widget.destroy()
+            tk.Label(self.editor_frame, text=f"{display_name} Dashboard",
+                    bg="#16213e", fg="#9b59b6", font=("Segoe UI", 12, "bold")).pack(pady=10)
+            tk.Label(self.editor_frame, text="Dashboard pages are rendered\ndirectly on the Pi at runtime.\n\nNo button editing needed.",
+                    bg="#16213e", fg="#888", font=("Segoe UI", 10, "italic")).pack(pady=20)
+
+            # Refresh interval editor
+            interval_frame = tk.Frame(self.editor_frame, bg="#16213e")
+            interval_frame.pack(fill=tk.X, pady=5, padx=10)
+            tk.Label(interval_frame, text="Refresh (s):", bg="#16213e", fg="white",
+                    font=("Segoe UI", 10)).pack(side=tk.LEFT)
+            interval_entry = tk.Entry(interval_frame, width=5, font=("Segoe UI", 10))
+            interval_entry.insert(0, str(refresh))
+            interval_entry.pack(side=tk.LEFT, padx=5)
+
+            def apply_interval(entry=interval_entry):
+                try:
+                    val = int(entry.get())
+                    if val > 0:
+                        self.config["pages"][self.current_page]["refresh_interval"] = val
+                        self.show_status(f"Refresh interval set to {val}s")
+                except ValueError:
+                    self.show_status("Invalid interval", is_error=True)
+
+            tk.Button(interval_frame, text="Apply", command=apply_interval,
+                     bg="#27ae60", fg="white", font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=5)
+            return
+
+        buttons = page.get("buttons", [])
 
         # Button dimensions
         cols, rows = 3, 2
@@ -888,9 +984,12 @@ class StreamDeckEditor:
         self.preview_canvas.create_text(240, nav_y + 35, text=page_text,
                                         fill="#aaa", font=("Segoe UI", 14))
 
-        self.page_label.config(text=f"Page {self.current_page + 1}/{len(self.config['pages'])}")
+        page_name = page.get("name", f"Page {self.current_page + 1}")
+        self.page_label.config(text=f"Page {self.current_page + 1}/{len(self.config['pages'])} - {page_name}")
 
     def on_preview_click(self, event):
+        if self.is_dashboard_page():
+            return
         for x1, y1, x2, y2, idx in self.button_rects:
             if x1 <= event.x <= x2 and y1 <= event.y <= y2:
                 self.select_button(idx)
@@ -1147,6 +1246,7 @@ class StreamDeckEditor:
                 with open(path, 'r') as f:
                     self.config = json.load(f)
 
+        self.migrate_config()
         self.config["current_profile"] = profile_name
         self.current_page = 0
         self.ip_entry.delete(0, tk.END)
@@ -1210,8 +1310,10 @@ class StreamDeckEditor:
             self.refresh_preview()
 
     def add_page(self):
+        button_count = sum(1 for p in self.config["pages"] if p.get("type", "button") == "button")
         new_page = {
-            "name": f"Page {len(self.config['pages']) + 1}",
+            "name": f"Page {button_count + 1}",
+            "type": "button",
             "buttons": [
                 {"label": "", "action": "", "color": [60, 60, 80], "icon": None, "background": None, "app_path": None}
                 for _ in range(6)
@@ -1221,10 +1323,48 @@ class StreamDeckEditor:
         self.current_page = len(self.config["pages"]) - 1
         self.refresh_preview()
 
+    def add_dashboard_page(self):
+        """Show a menu to select which dashboard type to add"""
+        existing = {p.get("dashboard_type") for p in self.config["pages"] if p.get("type") == "dashboard"}
+        available = {k: v for k, v in DASHBOARD_TYPES.items() if k not in existing}
+
+        if not available:
+            self.show_status("All dashboard types already added!", is_error=True)
+            return
+
+        menu = tk.Menu(self.root, tearoff=0)
+        for dtype, info in available.items():
+            menu.add_command(label=info["name"],
+                           command=lambda dt=dtype, inf=info: self._do_add_dashboard(dt, inf))
+        try:
+            menu.tk_popup(self.root.winfo_pointerx(), self.root.winfo_pointery())
+        finally:
+            menu.grab_release()
+
+    def _do_add_dashboard(self, dashboard_type, info):
+        new_page = {
+            "name": info["name"],
+            "type": "dashboard",
+            "dashboard_type": dashboard_type,
+            "refresh_interval": info["refresh_interval"],
+        }
+        self.config["pages"].append(new_page)
+        self.current_page = len(self.config["pages"]) - 1
+        self.refresh_preview()
+        self.show_status(f"{info['name']} dashboard added!")
+
     def delete_page(self):
         if len(self.config["pages"]) <= 1:
             self.show_status("Cannot delete last page!", is_error=True)
             return
+
+        page = self.config["pages"][self.current_page]
+        # Ensure at least one button page remains
+        if page.get("type", "button") == "button":
+            button_pages = [p for p in self.config["pages"] if p.get("type", "button") == "button"]
+            if len(button_pages) <= 1:
+                self.show_status("Cannot delete last button page!", is_error=True)
+                return
 
         del self.config["pages"][self.current_page]
         if self.current_page >= len(self.config["pages"]):
@@ -1245,19 +1385,50 @@ class StreamDeckEditor:
             self.refresh_preview()
 
     def generate_pi_script(self):
-        """Generate the Pi script with dashboard + button pages"""
+        """Generate the Pi script with dashboard + button pages from config"""
         config = self.config
-        pages_code = json.dumps(config["pages"], indent=4)
+        button_pages = self.get_button_pages()
+        dashboard_pages = self.get_dashboard_pages()
+
+        pages_code = json.dumps(button_pages, indent=4)
         pages_code = pages_code.replace("null", "None").replace("true", "True").replace("false", "False")
+
+        # Build ordered page list: each entry is ("dashboard_type", index) or ("button", index)
+        page_order = []
+        dash_idx = 0
+        btn_idx = 0
+        for p in config["pages"]:
+            if p.get("type") == "dashboard":
+                page_order.append(("dashboard", p.get("dashboard_type", "system_monitor"), dash_idx))
+                dash_idx += 1
+            else:
+                page_order.append(("button", None, btn_idx))
+                btn_idx += 1
+
+        # Build the DASHBOARD_TYPES list for the generated script
+        dashboard_types_list = [p.get("dashboard_type") for p in dashboard_pages]
+        num_dashboard = len(dashboard_pages)
+
         bg_color = config.get("background_color", [25, 25, 35])
         windows_ip = self.ip_entry.get()
 
+        # Determine which dashboard render functions to include
+        has_system = "system_monitor" in dashboard_types_list
+        has_windows = "windows_pc" in dashboard_types_list
+        has_pihole = "pihole" in dashboard_types_list
+        has_docker = "docker" in dashboard_types_list
+
         script = f'''#!/usr/bin/env python3
-import os, mmap, time, requests, threading, select, subprocess
+"""
+Unified StreamDeck - Cyberpunk Dashboards + Button Pages
+Auto-generated by StreamDeck Editor v3
+"""
+import os, mmap, time, requests, threading, select, subprocess, json
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from evdev import InputDevice, ecodes
 
+# ============== CONFIG ==============
 WINDOWS_PC_IP = "{windows_ip}"
 WINDOWS_PORT = 5555
 FB_DEV = "/dev/fb1"
@@ -1269,51 +1440,162 @@ CAL_X_MIN, CAL_X_MAX = 600, 3550
 CAL_Y_MIN, CAL_Y_MAX = 750, 3300
 INVERT_Y = True
 
-BG_COLOR = tuple({bg_color})
+PIHOLE_PASSWORD = "3235"
+PIHOLE_URL = "http://localhost"
 
-# Button pages (dashboard is page 0, these start at page 1)
+# Colors - Cyberpunk theme
+BG_COLOR = (8, 8, 18)
+CARD_BG = (15, 15, 25)
+CARD_BORDER = (45, 48, 65)
+TEXT_PRIMARY = (255, 255, 255)
+TEXT_SECONDARY = (140, 145, 165)
+TEXT_MUTED = (90, 95, 110)
+CYBER_ORANGE = (255, 160, 0)
+CYBER_GOLD = (255, 200, 50)
+CYBER_BRIGHT = (255, 230, 120)
+CYBER_DIM = (180, 130, 40)
+CYBER_CYAN = (0, 220, 255)
+CYBER_GREEN = (0, 255, 120)
+CYBER_RED = (255, 80, 80)
+CYBER_PURPLE = (200, 100, 255)
+
+# Page layout - ordered list of page types
+DASHBOARD_TYPES = {dashboard_types_list}
+NUM_DASHBOARD_PAGES = {num_dashboard}
+
 BUTTON_PAGES = {pages_code}
 
-# Total pages = 1 (dashboard) + button pages
-TOTAL_PAGES = 1 + len(BUTTON_PAGES)
+TOTAL_PAGES = NUM_DASHBOARD_PAGES + len(BUTTON_PAGES)
 
+# Layout
 COLS, ROWS = 3, 2
 MARGIN = 10
-NAV_HEIGHT = 70
+NAV_HEIGHT = 38
+NAV_Y = HEIGHT - NAV_HEIGHT
 BTN_W = (WIDTH - (COLS + 1) * MARGIN) // COLS
 BTN_H = (HEIGHT - NAV_HEIGHT - (ROWS + 1) * MARGIN) // ROWS
+LEFT_NAV = (0, NAV_Y, 75, HEIGHT)
+RIGHT_NAV = (WIDTH - 75, NAV_Y, WIDTH, HEIGHT)
 
+# Framebuffer
 fb = os.open(FB_DEV, os.O_RDWR)
 fb_mmap = mmap.mmap(fb, WIDTH * HEIGHT * 2)
 
-current_page = 0  # 0 = dashboard, 1+ = button pages
+current_page = 0
 gif_frame_indices = {{}}
 gif_cache = {{}}
+pihole_sid = None
+pihole_sid_time = 0
 
-def get_btn_rect(idx):
-    row, col = idx // COLS, idx % COLS
-    x = MARGIN + col * (BTN_W + MARGIN)
-    y = MARGIN + row * (BTN_H + MARGIN)
-    return (x, y, x + BTN_W, y + BTN_H)
-
-NAV_Y = HEIGHT - NAV_HEIGHT
-LEFT_NAV = (0, NAV_Y, 120, HEIGHT)
-RIGHT_NAV = (WIDTH - 120, NAV_Y, WIDTH, HEIGHT)
-
+# ============== FONTS ==============
 print("Loading fonts...")
 try:
+    font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
+    font_big = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 28)
     font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
-    font_medium = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 18)
-    font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
-    font_tiny = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12)
+    font_medium = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
+    font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 13)
+    font_tiny = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11)
+    font_btn = font_medium
+    font_nav = font_large
 except:
-    font_large = font_medium = font_small = font_tiny = ImageFont.load_default()
+    font_title = font_big = font_large = font_medium = font_small = font_tiny = font_btn = font_nav = ImageFont.load_default()
 
-font_btn = font_medium
-font_nav = font_large
+# ============== HELPER FUNCTIONS ==============
+def write_to_fb(img):
+    arr = np.array(img, dtype=np.uint16)
+    rgb565 = ((arr[:,:,0] >> 3) << 11) | ((arr[:,:,1] >> 2) << 5) | (arr[:,:,2] >> 3)
+    fb_mmap.seek(0)
+    fb_mmap.write(rgb565.astype(np.uint16).tobytes())
 
-# ============== DASHBOARD FUNCTIONS ==============
+def draw_nav_bar(draw, page_num):
+    draw.rectangle([0, NAV_Y, WIDTH, HEIGHT], fill=(10, 10, 18))
+    draw.line([0, NAV_Y, WIDTH, NAV_Y], fill=CYBER_ORANGE, width=2)
+    if page_num > 0:
+        draw.rectangle([LEFT_NAV[0]+2, NAV_Y+4, LEFT_NAV[2]-2, HEIGHT-4], outline=CYBER_ORANGE, width=2)
+        draw.text((30, NAV_Y + 8), "<", fill=CYBER_BRIGHT, font=font_medium)
+    else:
+        draw.rectangle([LEFT_NAV[0]+2, NAV_Y+4, LEFT_NAV[2]-2, HEIGHT-4], outline=(80, 60, 20), width=1)
+        draw.text((30, NAV_Y + 8), "<", fill=(80, 60, 20), font=font_medium)
+    if page_num < TOTAL_PAGES - 1:
+        draw.rectangle([RIGHT_NAV[0]+2, NAV_Y+4, RIGHT_NAV[2]-2, HEIGHT-4], outline=CYBER_ORANGE, width=2)
+        draw.text((WIDTH - 45, NAV_Y + 8), ">", fill=CYBER_BRIGHT, font=font_medium)
+    else:
+        draw.rectangle([RIGHT_NAV[0]+2, NAV_Y+4, RIGHT_NAV[2]-2, HEIGHT-4], outline=(80, 60, 20), width=1)
+        draw.text((WIDTH - 45, NAV_Y + 8), ">", fill=(80, 60, 20), font=font_medium)
+    center_x = WIDTH // 2
+    dot_spacing = 18
+    total_dots_width = (TOTAL_PAGES - 1) * dot_spacing
+    btn_w = total_dots_width + 40
+    draw.rectangle([center_x - btn_w//2, NAV_Y+4, center_x + btn_w//2, HEIGHT-4], outline=CYBER_ORANGE, width=2)
+    dots_start_x = center_x - total_dots_width // 2
+    dot_y = NAV_Y + (HEIGHT - NAV_Y) // 2
+    for i in range(TOTAL_PAGES):
+        dot_x = dots_start_x + i * dot_spacing
+        if i == page_num:
+            draw.ellipse([dot_x - 5, dot_y - 5, dot_x + 5, dot_y + 5], fill=CYBER_ORANGE)
+        else:
+            draw.ellipse([dot_x - 3, dot_y - 3, dot_x + 3, dot_y + 3], fill=(200, 200, 200))
 
+def draw_cyber_box(draw, x, y, w, h, color=CYBER_ORANGE):
+    glow = (color[0]//4, color[1]//4, color[2]//4)
+    draw.rectangle([x-1, y-1, x+w+1, y+h+1], outline=glow, width=1)
+    draw.rectangle([x, y, x+w, y+h], outline=color, width=3)
+    corner_len = 15
+    draw.line([x, y+corner_len, x, y], fill=color, width=3)
+    draw.line([x, y, x+corner_len, y], fill=color, width=3)
+    draw.line([x+corner_len, y, x+corner_len, y+8], fill=color, width=2)
+    draw.ellipse([x+corner_len-2, y+8, x+corner_len+2, y+12], fill=color)
+    draw.line([x+w-corner_len, y, x+w, y], fill=color, width=3)
+    draw.line([x+w, y, x+w, y+corner_len], fill=color, width=3)
+    draw.line([x+w-corner_len, y, x+w-corner_len, y+8], fill=color, width=2)
+    draw.ellipse([x+w-corner_len-2, y+8, x+w-corner_len+2, y+12], fill=color)
+    draw.line([x, y+h-corner_len, x, y+h], fill=color, width=3)
+    draw.line([x, y+h, x+corner_len, y+h], fill=color, width=3)
+    draw.line([x+corner_len, y+h, x+corner_len, y+h-8], fill=color, width=2)
+    draw.ellipse([x+corner_len-2, y+h-12, x+corner_len+2, y+h-8], fill=color)
+    draw.line([x+w-corner_len, y+h, x+w, y+h], fill=color, width=3)
+    draw.line([x+w, y+h-corner_len, x+w, y+h], fill=color, width=3)
+    draw.line([x+w-corner_len, y+h, x+w-corner_len, y+h-8], fill=color, width=2)
+    draw.ellipse([x+w-corner_len-2, y+h-12, x+w-corner_len+2, y+h-8], fill=color)
+
+def get_gradient_color(percent):
+    if percent < 30:
+        return (0, 255, 100)
+    elif percent < 50:
+        t = (percent - 30) / 20
+        return (int(255 * t), 255, int(100 * (1 - t)))
+    elif percent < 70:
+        t = (percent - 50) / 20
+        return (255, int(255 - 55 * t), 0)
+    elif percent < 85:
+        t = (percent - 70) / 15
+        return (255, int(200 - 150 * t), 0)
+    else:
+        return (255, 50, 30)
+
+def draw_segmented_bar(draw, x, y, w, h, percent, color=None, segments=10):
+    gap = 3
+    segment_w = (w - (segments - 1) * gap) // segments
+    filled = int(segments * percent / 100)
+    for i in range(segments):
+        sx = x + i * (segment_w + gap)
+        if i < filled:
+            seg_percent = (i + 1) * 100 / segments
+            seg_color = get_gradient_color(seg_percent)
+            draw.rectangle([sx, y, sx + segment_w, y + h], fill=seg_color)
+            highlight = (min(seg_color[0]+40, 255), min(seg_color[1]+40, 255), min(seg_color[2]+40, 255))
+            draw.line([sx+1, y+1, sx + segment_w-1, y+1], fill=highlight, width=1)
+        else:
+            draw.rectangle([sx, y, sx + segment_w, y + h], fill=(20, 20, 30), outline=(50, 50, 60))
+
+def draw_progress_bar(draw, x, y, w, h, percent, color, bg_color=(40, 42, 55)):
+    draw.rounded_rectangle([x, y, x + w, y + h], radius=3, fill=bg_color)
+    fill_w = int((w - 2) * min(percent, 100) / 100)
+    if fill_w > 0:
+        draw.rounded_rectangle([x + 1, y + 1, x + 1 + fill_w, y + h - 1], radius=2, fill=color)
+
+# ============== PI SYSTEM FUNCTIONS ==============
 def get_cpu_usage():
     try:
         with open('/proc/stat', 'r') as f:
@@ -1328,9 +1610,7 @@ def get_cpu_usage():
         get_cpu_usage.last = (idle, total)
         idle_delta = idle - last_idle
         total_delta = total - last_total
-        if total_delta == 0:
-            return 0
-        return int(100 * (1 - idle_delta / total_delta))
+        return int(100 * (1 - idle_delta / total_delta)) if total_delta else 0
     except:
         return 0
 
@@ -1353,8 +1633,7 @@ def get_memory_usage():
 def get_cpu_temp():
     try:
         with open('/sys/class/thermal/thermal_zone0/temp', 'r') as f:
-            temp = int(f.read().strip()) / 1000
-        return temp
+            return int(f.read().strip()) / 1000
     except:
         return 0
 
@@ -1366,7 +1645,7 @@ def get_uptime():
         hours = int((seconds % 86400) // 3600)
         mins = int((seconds % 3600) // 60)
         if days > 0:
-            return f"{{days}}d {{hours}}h {{mins}}m"
+            return f"{{days}}d {{hours}}h"
         elif hours > 0:
             return f"{{hours}}h {{mins}}m"
         else:
@@ -1392,80 +1671,385 @@ def get_disk_usage():
         return percent, used // (1024**3), total // (1024**3)
     except:
         return 0, 0, 0
+'''
 
-def draw_progress_bar(draw, x, y, w, h, percent, color, bg_color=(40, 40, 50)):
-    draw.rectangle([x, y, x + w, y + h], fill=bg_color, outline=(80, 80, 90))
-    fill_w = int((w - 2) * percent / 100)
-    if fill_w > 0:
-        draw.rectangle([x + 1, y + 1, x + 1 + fill_w, y + h - 1], fill=color)
-
-def render_dashboard():
-    img = Image.new("RGB", (WIDTH, HEIGHT), (20, 22, 30))
+        # Conditionally include dashboard render functions
+        if has_system:
+            script += '''
+# ============== DASHBOARD: PI SYSTEM ==============
+def render_system_monitor_dashboard(page_num):
+    img = Image.new("RGB", (WIDTH, HEIGHT), BG_COLOR)
     draw = ImageDraw.Draw(img)
-
-    draw.text((WIDTH // 2 - 80, 8), "SYSTEM MONITOR", fill=(100, 200, 255), font=font_large)
-
     cpu = get_cpu_usage()
     mem_pct, mem_used, mem_total = get_memory_usage()
     temp = get_cpu_temp()
     uptime = get_uptime()
     ip = get_ip_address()
     disk_pct, disk_used, disk_total = get_disk_usage()
+    available_h = NAV_Y - 10
+    box_w = (WIDTH - 30) // 2
+    box_h = available_h - 10
+    gap = 10
+    start_x, start_y = 5, 5
+    bx, by = start_x, start_y
+    draw_cyber_box(draw, bx, by, box_w, box_h, CYBER_ORANGE)
+    draw.text((bx + 10, by + 8), "RASPBERRY PI", fill=CYBER_BRIGHT, font=font_medium)
+    row_y = by + 35
+    draw_segmented_bar(draw, bx + 10, row_y, 95, 16, cpu, CYBER_ORANGE, 8)
+    draw.text((bx + 115, row_y), f"CPU: {cpu}%", fill=CYBER_GOLD, font=font_small)
+    row_y += 28
+    draw_segmented_bar(draw, bx + 10, row_y, 95, 16, temp, CYBER_ORANGE, 8)
+    draw.text((bx + 115, row_y), f"TEMP: {temp:.0f}C", fill=CYBER_GOLD, font=font_small)
+    row_y += 28
+    draw_segmented_bar(draw, bx + 10, row_y, 95, 16, mem_pct, CYBER_ORANGE, 8)
+    draw.text((bx + 115, row_y), f"MEM: {mem_pct}%", fill=CYBER_GOLD, font=font_small)
+    row_y += 28
+    draw_segmented_bar(draw, bx + 10, row_y, 95, 16, disk_pct, CYBER_ORANGE, 8)
+    draw.text((bx + 115, row_y), f"DISK: {disk_pct}%", fill=CYBER_GOLD, font=font_small)
+    bx = start_x + box_w + gap
+    draw_cyber_box(draw, bx, by, box_w, box_h, CYBER_ORANGE)
+    draw.text((bx + 10, by + 8), "SYSTEM", fill=CYBER_BRIGHT, font=font_medium)
+    row_y = by + 38
+    draw.text((bx + 10, row_y), "IP:", fill=CYBER_DIM, font=font_small)
+    draw.text((bx + 35, row_y), ip, fill=CYBER_CYAN, font=font_small)
+    row_y += 28
+    draw.text((bx + 10, row_y), "UP:", fill=CYBER_DIM, font=font_small)
+    draw.text((bx + 35, row_y), uptime, fill=CYBER_BRIGHT, font=font_medium)
+    row_y += 32
+    draw.text((bx + 10, row_y), f"RAM: {mem_used}/{mem_total}MB", fill=CYBER_GOLD, font=font_small)
+    row_y += 26
+    draw.text((bx + 10, row_y), f"DISK: {disk_used}/{disk_total}GB", fill=CYBER_GOLD, font=font_small)
+    draw_nav_bar(draw, page_num)
+    write_to_fb(img)
+'''
 
-    y_start = 45
-    row_h = 38
-    bar_w = 200
-    bar_h = 16
+        if has_windows:
+            script += '''
+# ============== DASHBOARD: WINDOWS PC ==============
+def get_windows_stats():
+    try:
+        resp = requests.get(f"http://{WINDOWS_PC_IP}:{WINDOWS_PORT}/system/stats", timeout=3)
+        return resp.json()
+    except:
+        return None
 
-    y = y_start
-    cpu_color = (46, 204, 113) if cpu < 50 else (241, 196, 15) if cpu < 80 else (231, 76, 60)
-    draw.text((15, y), "CPU", fill=(180, 180, 200), font=font_medium)
-    draw.text((380, y), f"{{cpu}}%", fill=cpu_color, font=font_medium)
-    draw_progress_bar(draw, 70, y + 3, bar_w, bar_h, cpu, cpu_color)
+def render_windows_pc_dashboard(page_num):
+    img = Image.new("RGB", (WIDTH, HEIGHT), BG_COLOR)
+    draw = ImageDraw.Draw(img)
+    stats = get_windows_stats()
+    if not stats or 'error' in stats:
+        draw_cyber_box(draw, 100, 80, 280, 120, CYBER_ORANGE)
+        draw.text((180, 110), "WINDOWS", fill=CYBER_BRIGHT, font=font_big)
+        draw.text((175, 145), "OFFLINE", fill=CYBER_RED, font=font_medium)
+        draw_nav_bar(draw, page_num)
+        write_to_fb(img)
+        return
+    available_h = NAV_Y - 10
+    box_w = (WIDTH - 30) // 2
+    box_h = (available_h - 15) // 2
+    gap = 10
+    start_x, start_y = 5, 5
+    bx, by = start_x, start_y
+    draw_cyber_box(draw, bx, by, box_w, box_h, CYBER_ORANGE)
+    cpu = stats.get('cpu_percent', 0)
+    cpu_temp = stats.get('cpu_temp', 0)
+    cpu_count = stats.get('cpu_count', 0)
+    cpu_freq = stats.get('cpu_freq_current', stats.get('cpu_freq', 0))
+    draw.text((bx + 10, by + 8), f"CPU ({cpu_count}c)", fill=CYBER_BRIGHT, font=font_medium)
+    row_y = by + 32
+    draw_segmented_bar(draw, bx + 10, row_y, 95, 16, cpu_temp, CYBER_ORANGE, 8)
+    draw.text((bx + 115, row_y), f"TEMP: {cpu_temp:.0f}C", fill=CYBER_GOLD, font=font_small)
+    row_y += 26
+    draw_segmented_bar(draw, bx + 10, row_y, 95, 16, cpu, CYBER_ORANGE, 8)
+    draw.text((bx + 115, row_y), f"LOAD: {cpu:.0f}%", fill=CYBER_GOLD, font=font_small)
+    row_y += 26
+    freq_pct = min(cpu_freq / 5000 * 100, 100)
+    draw_segmented_bar(draw, bx + 10, row_y, 95, 16, freq_pct, CYBER_ORANGE, 8)
+    draw.text((bx + 115, row_y), f"FREQ: {int(cpu_freq)}", fill=CYBER_GOLD, font=font_small)
+    bx = start_x + box_w + gap
+    draw_cyber_box(draw, bx, by, box_w, box_h, CYBER_ORANGE)
+    gpu = stats.get('gpu_percent', 0)
+    gpu_temp = stats.get('gpu_temp', 0)
+    gpu_power = stats.get('gpu_power_w', 0)
+    gpu_name = stats.get('gpu_name', 'GPU').replace('NVIDIA ', '').replace('GeForce ', '')
+    draw.text((bx + 10, by + 8), f"GPU: {gpu_name[:10]}", fill=CYBER_BRIGHT, font=font_medium)
+    row_y = by + 32
+    draw_segmented_bar(draw, bx + 10, row_y, 95, 16, gpu_temp, CYBER_ORANGE, 8)
+    draw.text((bx + 115, row_y), f"TEMP: {gpu_temp}C", fill=CYBER_GOLD, font=font_small)
+    row_y += 26
+    draw_segmented_bar(draw, bx + 10, row_y, 95, 16, gpu, CYBER_ORANGE, 8)
+    draw.text((bx + 115, row_y), f"LOAD: {gpu}%", fill=CYBER_GOLD, font=font_small)
+    row_y += 26
+    pwr_pct = min(gpu_power / 320 * 100, 100)
+    draw_segmented_bar(draw, bx + 10, row_y, 95, 16, pwr_pct, CYBER_ORANGE, 8)
+    draw.text((bx + 115, row_y), f"PWR: {gpu_power:.0f}W", fill=CYBER_GOLD, font=font_small)
+    bx, by = start_x, start_y + box_h + gap
+    draw_cyber_box(draw, bx, by, box_w, box_h, CYBER_ORANGE)
+    ram = stats.get('ram_percent', 0)
+    ram_used = stats.get('ram_used_gb', 0)
+    ram_total = stats.get('ram_total_gb', 0)
+    disk = stats.get('disk_percent', 0)
+    disk_free = stats.get('disk_free_gb', 0)
+    draw.text((bx + 10, by + 8), f"RAM: {ram_used:.0f}/{ram_total:.0f}GB", fill=CYBER_BRIGHT, font=font_medium)
+    draw.text((bx + 10, by + 30), f"USED: {ram:.0f}%", fill=CYBER_GOLD, font=font_small)
+    draw_segmented_bar(draw, bx + 10, by + 52, box_w - 25, 18, ram, CYBER_ORANGE, 12)
+    draw.text((bx + 10, by + 80), f"DISK: {disk:.0f}%  |  {disk_free:.0f}GB FREE", fill=CYBER_GOLD, font=font_small)
+    bx = start_x + box_w + gap
+    draw_cyber_box(draw, bx, by, box_w, box_h, CYBER_ORANGE)
+    gpu_fan = stats.get('gpu_fan_percent', 0)
+    uptime_h = stats.get('uptime_hours', 0)
+    net_recv = stats.get('net_recv_gb', 0)
+    if uptime_h >= 24:
+        uptime_str = f"{int(uptime_h // 24)}D {int(uptime_h % 24):02d}H"
+    else:
+        uptime_str = f"{uptime_h:.1f}H"
+    draw.text((bx + 10, by + 8), "SYS", fill=CYBER_BRIGHT, font=font_medium)
+    draw.text((bx + 10, by + 32), "FAN:", fill=CYBER_DIM, font=font_small)
+    draw.text((bx + 55, by + 32), f"{gpu_fan}%", fill=CYBER_GOLD, font=font_small)
+    draw.text((bx + 10, by + 56), "NET:", fill=CYBER_DIM, font=font_small)
+    draw.text((bx + 55, by + 56), f"{net_recv:.1f}GB", fill=CYBER_GOLD, font=font_small)
+    draw.text((bx + 10, by + 80), "UP:", fill=CYBER_DIM, font=font_small)
+    draw.text((bx + 55, by + 80), uptime_str, fill=CYBER_BRIGHT, font=font_medium)
+    draw_nav_bar(draw, page_num)
+    write_to_fb(img)
+'''
 
-    y += row_h
-    mem_color = (46, 204, 113) if mem_pct < 60 else (241, 196, 15) if mem_pct < 85 else (231, 76, 60)
-    draw.text((15, y), "MEM", fill=(180, 180, 200), font=font_medium)
-    draw.text((350, y), f"{{mem_used}}/{{mem_total}}MB", fill=(150, 150, 170), font=font_small)
-    draw_progress_bar(draw, 70, y + 3, bar_w, bar_h, mem_pct, mem_color)
+        if has_pihole:
+            script += '''
+# ============== DASHBOARD: PI-HOLE ==============
+def pihole_auth():
+    global pihole_sid, pihole_sid_time
+    if pihole_sid and time.time() - pihole_sid_time < 1500:
+        return pihole_sid
+    try:
+        resp = requests.post(f"{PIHOLE_URL}/api/auth", json={"password": PIHOLE_PASSWORD}, timeout=3)
+        data = resp.json()
+        if data.get("session", {}).get("valid"):
+            pihole_sid = data["session"]["sid"]
+            pihole_sid_time = time.time()
+            return pihole_sid
+    except:
+        pass
+    return None
 
-    y += row_h
-    disk_color = (46, 204, 113) if disk_pct < 70 else (241, 196, 15) if disk_pct < 90 else (231, 76, 60)
-    draw.text((15, y), "DISK", fill=(180, 180, 200), font=font_medium)
-    draw.text((350, y), f"{{disk_used}}/{{disk_total}}GB", fill=(150, 150, 170), font=font_small)
-    draw_progress_bar(draw, 70, y + 3, bar_w, bar_h, disk_pct, disk_color)
+def get_pihole_stats():
+    sid = pihole_auth()
+    if not sid:
+        return None
+    try:
+        resp = requests.get(f"{PIHOLE_URL}/api/stats/summary", headers={"sid": sid}, timeout=3)
+        data = resp.json()
+        return data if "queries" in data else None
+    except:
+        return None
 
-    y += row_h
-    temp_color = (46, 204, 113) if temp < 50 else (241, 196, 15) if temp < 70 else (231, 76, 60)
-    draw.text((15, y), "TEMP", fill=(180, 180, 200), font=font_medium)
-    draw.text((150, y), f"{{temp:.1f}}C", fill=temp_color, font=font_medium)
+def render_pihole_dashboard(page_num):
+    img = Image.new("RGB", (WIDTH, HEIGHT), BG_COLOR)
+    draw = ImageDraw.Draw(img)
+    stats = get_pihole_stats()
+    if not stats:
+        draw_cyber_box(draw, 100, 80, 280, 120, CYBER_ORANGE)
+        draw.text((170, 110), "PI-HOLE", fill=CYBER_BRIGHT, font=font_big)
+        draw.text((160, 145), "CONNECTING...", fill=CYBER_GOLD, font=font_small)
+        draw_nav_bar(draw, page_num)
+        write_to_fb(img)
+        return
+    queries = stats.get("queries", {})
+    total = queries.get("total", 0)
+    blocked = queries.get("blocked", 0)
+    pct = queries.get("percent_blocked", 0)
+    cached = queries.get("cached", 0)
+    forwarded = queries.get("forwarded", 0)
+    clients = stats.get("clients", {}).get("active", 0)
+    domains = stats.get("gravity", {}).get("domains_being_blocked", 0)
+    available_h = NAV_Y - 10
+    box_w = (WIDTH - 30) // 2
+    box_h = (available_h - 15) // 2
+    gap = 10
+    start_x, start_y = 5, 5
+    bx, by = start_x, start_y
+    draw_cyber_box(draw, bx, by, box_w, box_h, CYBER_ORANGE)
+    draw.text((bx + 10, by + 8), "QUERIES", fill=CYBER_BRIGHT, font=font_medium)
+    draw.text((bx + 10, by + 32), f"{total:,}", fill=CYBER_CYAN, font=font_big)
+    draw.text((bx + 10, by + 65), f"{clients} CLIENTS", fill=CYBER_GOLD, font=font_small)
+    bx = start_x + box_w + gap
+    draw_cyber_box(draw, bx, by, box_w, box_h, CYBER_ORANGE)
+    draw.text((bx + 10, by + 8), "BLOCKED", fill=CYBER_BRIGHT, font=font_medium)
+    draw.text((bx + 10, by + 32), f"{blocked:,}", fill=CYBER_RED, font=font_big)
+    draw_segmented_bar(draw, bx + 10, by + 65, 120, 14, pct, CYBER_ORANGE, 10)
+    draw.text((bx + 140, by + 65), f"{pct:.1f}%", fill=CYBER_GOLD, font=font_small)
+    bx, by = start_x, start_y + box_h + gap
+    draw_cyber_box(draw, bx, by, box_w, box_h, CYBER_ORANGE)
+    draw.text((bx + 10, by + 8), "TRAFFIC", fill=CYBER_BRIGHT, font=font_medium)
+    draw.text((bx + 10, by + 35), "CACHED:", fill=CYBER_GOLD, font=font_small)
+    draw.text((bx + 80, by + 35), f"{cached:,}", fill=CYBER_PURPLE, font=font_small)
+    draw.text((bx + 10, by + 59), "FWD:", fill=CYBER_GOLD, font=font_small)
+    draw.text((bx + 80, by + 59), f"{forwarded:,}", fill=CYBER_CYAN, font=font_small)
+    bx = start_x + box_w + gap
+    draw_cyber_box(draw, bx, by, box_w, box_h, CYBER_ORANGE)
+    draw.text((bx + 10, by + 8), "BLOCKLIST", fill=CYBER_BRIGHT, font=font_medium)
+    draw.text((bx + 10, by + 35), f"{domains:,}", fill=CYBER_GREEN, font=font_medium)
+    draw.text((bx + 10, by + 58), "DOMAINS", fill=CYBER_GOLD, font=font_small)
+    draw_nav_bar(draw, page_num)
+    write_to_fb(img)
+'''
 
-    draw.text((250, y), "UP", fill=(180, 180, 200), font=font_medium)
-    draw.text((300, y), uptime, fill=(100, 180, 255), font=font_medium)
+        if has_docker:
+            script += '''
+# ============== DASHBOARD: DOCKER ==============
+def get_docker_data():
+    try:
+        resp = requests.get(f"http://{WINDOWS_PC_IP}:{WINDOWS_PORT}/docker/containers", timeout=5)
+        data = resp.json()
+        return data.get('containers', []), data.get('count', 0)
+    except:
+        return [], 0
 
-    y += row_h
-    draw.text((15, y), "IP", fill=(180, 180, 200), font=font_medium)
-    draw.text((70, y), ip, fill=(150, 220, 150), font=font_medium)
+def render_docker_dashboard(page_num):
+    img = Image.new("RGB", (WIDTH, HEIGHT), BG_COLOR)
+    draw = ImageDraw.Draw(img)
+    containers, count = get_docker_data()
+    if not containers:
+        draw_cyber_box(draw, 100, 80, 280, 120, CYBER_ORANGE)
+        draw.text((180, 110), "DOCKER", fill=CYBER_BRIGHT, font=font_big)
+        draw.text((155, 145), "NO CONTAINERS", fill=CYBER_GOLD, font=font_medium)
+        draw_nav_bar(draw, page_num)
+        write_to_fb(img)
+        return
+    cols, rows = 3, 4
+    margin = 5
+    start_y = 5
+    card_w = (WIDTH - margin * (cols + 1)) // cols
+    card_h = (NAV_Y - start_y - margin * (rows + 1)) // rows
+    for i, c in enumerate(containers[:12]):
+        row, col = i // cols, i % cols
+        x = margin + col * (card_w + margin)
+        y = start_y + row * (card_h + margin)
+        status = c.get('status', '')
+        is_healthy = 'healthy' in status.lower()
+        is_up = 'up' in status.lower()
+        if is_healthy:
+            status_color = CYBER_GREEN
+        elif is_up:
+            status_color = CYBER_CYAN
+        else:
+            status_color = CYBER_RED
+        draw.rectangle([x, y, x+card_w, y+card_h], fill=(15, 15, 25), outline=CYBER_ORANGE, width=2)
+        draw.rectangle([x+2, y+2, x+5, y+card_h-2], fill=status_color)
+        name = c.get('name', '?')
+        for p in ['compassionate_', 'nervous_', 'elated_', 'determined_', 'naughty_', 'flamboyant_', 'upbeat_', 'suspicious_']:
+            if name.startswith(p):
+                name = name[len(p):]
+                break
+        name = name[:11] + '..' if len(name) > 13 else name
+        draw.text((x+10, y+4), name, fill=CYBER_BRIGHT, font=font_small)
+        image = c.get('image', '').split('/')[-1].split(':')[0]
+        image = image[:13] + '..' if len(image) > 15 else image
+        draw.text((x+10, y+20), image, fill=(100, 80, 30), font=font_tiny)
+        if 'Up' in status:
+            parts = status.replace('(healthy)', '').strip().split()
+            up = f"{parts[1]}{parts[2][0]}" if len(parts) >= 3 else "Up"
+            draw.text((x+card_w-32, y+card_h-14), up, fill=status_color, font=font_tiny)
+    draw_nav_bar(draw, page_num)
+    write_to_fb(img)
+'''
 
-    draw.rectangle([0, NAV_Y, WIDTH, HEIGHT], fill=(40, 40, 55))
+        # Build the dispatch map and page selector
+        # Build render_current_page dispatch
+        dispatch_lines = []
+        for i, dtype in enumerate(dashboard_types_list):
+            func_name = f"render_{dtype}_dashboard"
+            dispatch_lines.append(f"    {'if' if i == 0 else 'elif'} current_page == {i}:")
+            dispatch_lines.append(f"        {func_name}({i})")
 
-    draw.rectangle(LEFT_NAV, fill=(50, 50, 65))
-    draw.text((40, NAV_Y + 15), "<", fill=(100, 100, 120), font=font_nav)
+        if dashboard_types_list:
+            dispatch_lines.append(f"    else:")
+            dispatch_lines.append(f"        show_button_page(current_page - NUM_DASHBOARD_PAGES)")
+        else:
+            dispatch_lines.append(f"    show_button_page(current_page)")
 
-    draw.rectangle(RIGHT_NAV, fill=(70, 130, 180))
-    draw.text((WIDTH - 80, NAV_Y + 15), ">", fill=(255, 255, 255), font=font_nav)
+        dispatch_code = "\n".join(dispatch_lines)
 
-    page_text = f"1/{{TOTAL_PAGES}}"
-    bbox = draw.textbbox((0, 0), page_text, font=font_btn)
-    tw = bbox[2] - bbox[0]
-    draw.text((WIDTH // 2 - tw // 2, NAV_Y + 22), page_text, fill=(200, 200, 220), font=font_btn)
+        script += f'''
+# ============== PAGE SELECTOR GRID ==============
+page_selector_active = False
 
-    arr = np.array(img, dtype=np.uint16)
-    rgb565 = ((arr[:,:,0] >> 3) << 11) | ((arr[:,:,1] >> 2) << 5) | (arr[:,:,2] >> 3)
-    fb_mmap.seek(0)
-    fb_mmap.write(rgb565.astype(np.uint16).tobytes())
+def render_page_selector():
+    img = Image.new("RGB", (WIDTH, HEIGHT), BG_COLOR)
+    draw = ImageDraw.Draw(img)
+    draw.text((WIDTH//2 - 60, 8), "SELECT PAGE", fill=CYBER_BRIGHT, font=font_medium)
+    cols, rows = 3, 2
+    margin = 15
+    start_y = 40
+    card_w = (WIDTH - margin * (cols + 1)) // cols
+    card_h = (NAV_Y - start_y - margin * (rows + 1)) // rows
+    for i in range(min(TOTAL_PAGES, 6)):
+        row, col = i // cols, i % cols
+        x = margin + col * (card_w + margin)
+        y = start_y + row * (card_h + margin)
+        if i == current_page:
+            draw_cyber_box(draw, x, y, card_w, card_h, CYBER_CYAN)
+            text_color = CYBER_CYAN
+        else:
+            draw_cyber_box(draw, x, y, card_w, card_h, CYBER_ORANGE)
+            text_color = CYBER_BRIGHT
+        if i < NUM_DASHBOARD_PAGES:
+            name = DASHBOARD_TYPES[i].upper().replace("_", " ")[:8]
+        else:
+            bp = BUTTON_PAGES[i - NUM_DASHBOARD_PAGES]
+            name = bp.get("name", f"PAGE {{i+1}}")[:8].upper()
+        bbox = draw.textbbox((0, 0), name, font=font_medium)
+        tw = bbox[2] - bbox[0]
+        draw.text((x + (card_w - tw) // 2, y + card_h // 2 - 10), name, fill=text_color, font=font_medium)
+        draw.text((x + 10, y + 8), f"{{i+1}}", fill=CYBER_ORANGE, font=font_small)
+    draw.text((WIDTH//2 - 70, NAV_Y + 8), "TAP OUTSIDE TO CANCEL", fill=(100, 80, 40), font=font_tiny)
+    write_to_fb(img)
+
+def get_page_from_grid(sx, sy):
+    cols, rows = 3, 2
+    margin = 15
+    start_y = 40
+    card_w = (WIDTH - margin * (cols + 1)) // cols
+    card_h = (NAV_Y - start_y - margin * (rows + 1)) // rows
+    for i in range(min(TOTAL_PAGES, 6)):
+        row, col = i // cols, i % cols
+        x = margin + col * (card_w + margin)
+        y = start_y + row * (card_h + margin)
+        if x <= sx <= x + card_w and y <= sy <= y + card_h:
+            return i
+    return -1
 
 # ============== BUTTON PAGE FUNCTIONS ==============
+def get_btn_rect(idx):
+    row, col = idx // COLS, idx % COLS
+    x = MARGIN + col * (BTN_W + MARGIN)
+    y = MARGIN + row * (BTN_H + MARGIN)
+    return (x, y, x + BTN_W, y + BTN_H)
+
+def is_animated_ext(path):
+    if not path:
+        return False
+    lower = path.lower()
+    return lower.endswith('.gif') or lower.endswith('.webp')
+
+def load_gif_frames(path, size, use_cover=False):
+    if not path or not is_animated_ext(path):
+        return None
+    pi_path = os.path.join(ICONS_DIR, os.path.basename(path.replace('\\\\', '/')))
+    try:
+        img = Image.open(pi_path)
+        frames = []
+        for frame_num in range(getattr(img, 'n_frames', 1)):
+            img.seek(frame_num)
+            frame = img.convert("RGBA")
+            if use_cover:
+                frame = cover_resize(frame, size[0], size[1])
+            else:
+                frame = frame.resize(size, Image.LANCZOS)
+            frames.append(frame)
+        return frames if frames else None
+    except:
+        return None
 
 def cover_resize(img, target_w, target_h):
     img_w, img_h = img.size
@@ -1482,124 +2066,50 @@ def cover_resize(img, target_w, target_h):
     top = (new_h - target_h) // 2
     return img.crop((left, top, left + target_w, top + target_h))
 
-def is_animated_ext(path):
-    if not path:
-        return False
-    lower = path.lower()
-    return lower.endswith('.gif') or lower.endswith('.webp')
-
-MAX_GIF_FRAMES = 30
-
-def load_gif_frames(path, size, use_cover=False):
-    if not path:
-        return None
-    parts = path.replace(chr(92), "/").split("/")
-    idx = next((i for i, p in enumerate(parts) if p == "streamdeck_icons"), -1)
-    rel = "/".join(parts[idx+1:]) if idx >= 0 else parts[-1]
-    pi_path = os.path.join(ICONS_DIR, rel)
-    if not os.path.exists(pi_path):
-        return None
-    if not is_animated_ext(pi_path):
-        return None
-    try:
-        img = Image.open(pi_path)
-        frames = []
-        frame_count = min(getattr(img, 'n_frames', 1), MAX_GIF_FRAMES)
-        for i in range(frame_count):
-            img.seek(i)
-            frame = img.copy().convert("RGBA")
-            if use_cover:
-                frame = cover_resize(frame, size[0], size[1])
-            else:
-                frame = frame.resize(size)
-            frames.append(frame)
-        return frames if len(frames) > 1 else None
-    except:
-        return None
-
 def load_image(path, size, frame_idx=0, use_cover=False):
     if not path:
         return None
-    parts = path.replace(chr(92), "/").split("/")
-    idx = next((i for i, p in enumerate(parts) if p == "streamdeck_icons"), -1)
-    rel = "/".join(parts[idx+1:]) if idx >= 0 else parts[-1]
-    pi_path = os.path.join(ICONS_DIR, rel)
-    if not os.path.exists(pi_path):
-        return None
-
-    cache_key = (pi_path, size, use_cover)
-    if cache_key in gif_cache:
-        frames = gif_cache[cache_key]
-        return frames[frame_idx % len(frames)]
-
-    if is_animated_ext(pi_path):
-        frames = load_gif_frames(path, size, use_cover)
-        if frames:
-            gif_cache[cache_key] = frames
+    pi_path = os.path.join(ICONS_DIR, os.path.basename(path.replace('\\\\', '/')))
+    if is_animated_ext(path):
+        cache_key = (pi_path, size, use_cover)
+        if cache_key not in gif_cache:
+            frames = load_gif_frames(path, size, use_cover)
+            if frames:
+                gif_cache[cache_key] = frames
+        if cache_key in gif_cache:
+            frames = gif_cache[cache_key]
             return frames[frame_idx % len(frames)]
-
     try:
         img = Image.open(pi_path).convert("RGBA")
-        if use_cover:
-            img = cover_resize(img, size[0], size[1])
-        else:
-            img = img.resize(size)
-        return img
+        return cover_resize(img, size[0], size[1]) if use_cover else img.resize(size, Image.LANCZOS)
     except:
         return None
 
 def make_button_frame_bytes(page_idx, highlight=-1):
     img = Image.new("RGB", (WIDTH, HEIGHT), BG_COLOR)
     draw = ImageDraw.Draw(img)
-
     buttons = BUTTON_PAGES[page_idx]["buttons"]
-
     for i, btn in enumerate(buttons):
         x1, y1, x2, y2 = get_btn_rect(i)
-        color = tuple(btn.get("color", [100, 100, 100]))
+        color = tuple(btn.get("color", [60, 60, 80]))
         if i == highlight:
             color = (255, 255, 255)
-
-        draw.rounded_rectangle([x1, y1, x2, y2], radius=12, fill=color, outline=(255,255,255), width=2)
-
+        draw.rounded_rectangle([x1, y1, x2, y2], radius=12, fill=color, outline=CYBER_ORANGE, width=2)
         if i != highlight:
-            bg_key = f"bg_{{page_idx}}_{{i}}"
-            bg_frame = gif_frame_indices.get(bg_key, 0)
+            bg_frame = gif_frame_indices.get(f"bg_{{page_idx}}_{{i}}", 0)
             bg_img = load_image(btn.get("background"), (BTN_W - 4, BTN_H - 4), bg_frame, use_cover=True)
             if bg_img:
                 img.paste(bg_img, (x1 + 2, y1 + 2), bg_img)
-
-            icon_key = f"icon_{{page_idx}}_{{i}}"
-            icon_frame = gif_frame_indices.get(icon_key, 0)
+            icon_frame = gif_frame_indices.get(f"icon_{{page_idx}}_{{i}}", 0)
             icon = load_image(btn.get("icon"), (50, 50), icon_frame)
             if icon:
-                icon_x = x1 + (BTN_W - 50) // 2
-                icon_y = y1 + 10
-                img.paste(icon, (icon_x, icon_y), icon)
-
+                img.paste(icon, (x1 + (BTN_W - 50) // 2, y1 + 10), icon)
         label = btn.get("label", "")
         if label:
-            bbox = draw.textbbox((0,0), label, font=font_btn)
+            bbox = draw.textbbox((0, 0), label, font=font_btn)
             tw = bbox[2] - bbox[0]
-            draw.text((x1 + (BTN_W - tw)//2, y2 - 25), label, fill=(255,255,255), font=font_btn)
-
-    draw.rectangle([0, NAV_Y, WIDTH, HEIGHT], fill=(40, 40, 55))
-
-    display_page = page_idx + 2
-
-    left_color = (70, 130, 180)
-    draw.rectangle(LEFT_NAV, fill=left_color)
-    draw.text((40, NAV_Y + 15), "<", fill=(255,255,255), font=font_nav)
-
-    right_color = (70, 130, 180) if page_idx < len(BUTTON_PAGES) - 1 else (50, 50, 65)
-    draw.rectangle(RIGHT_NAV, fill=right_color)
-    draw.text((WIDTH - 80, NAV_Y + 15), ">", fill=(255,255,255), font=font_nav)
-
-    page_text = f"{{display_page}}/{{TOTAL_PAGES}}"
-    bbox = draw.textbbox((0,0), page_text, font=font_btn)
-    tw = bbox[2] - bbox[0]
-    draw.text((WIDTH//2 - tw//2, NAV_Y + 22), page_text, fill=(200,200,220), font=font_btn)
-
+            draw.text((x1 + (BTN_W - tw) // 2, y2 - 25), label, fill=CYBER_BRIGHT, font=font_btn)
+    draw_nav_bar(draw, NUM_DASHBOARD_PAGES + page_idx)
     arr = np.array(img, dtype=np.uint16)
     rgb565 = ((arr[:,:,0] >> 3) << 11) | ((arr[:,:,1] >> 2) << 5) | (arr[:,:,2] >> 3)
     return rgb565.astype(np.uint16).tobytes()
@@ -1607,9 +2117,7 @@ def make_button_frame_bytes(page_idx, highlight=-1):
 def has_animated():
     for page in BUTTON_PAGES:
         for btn in page["buttons"]:
-            bg = btn.get("background", "")
-            icon = btn.get("icon", "")
-            if is_animated_ext(bg) or is_animated_ext(icon):
+            if is_animated_ext(btn.get("background", "")) or is_animated_ext(btn.get("icon", "")):
                 return True
     return False
 
@@ -1619,9 +2127,7 @@ gif_buttons_per_page = {{}}
 for p_idx, page in enumerate(BUTTON_PAGES):
     gif_buttons_per_page[p_idx] = []
     for b_idx, btn in enumerate(page["buttons"]):
-        bg = btn.get("background", "")
-        icon = btn.get("icon", "")
-        if is_animated_ext(bg) or is_animated_ext(icon):
+        if is_animated_ext(btn.get("background", "")) or is_animated_ext(btn.get("icon", "")):
             gif_buttons_per_page[p_idx].append(b_idx)
             gif_frame_indices[f"btn_{{p_idx}}_{{b_idx}}"] = 0
 
@@ -1635,45 +2141,27 @@ print(f"Cached {{len(frame_cache)}} button frames!")
 
 print("Pre-rendering GIF frames...")
 gif_frame_cache = {{}}
-
 for p_idx, page in enumerate(BUTTON_PAGES):
     for b_idx in gif_buttons_per_page.get(p_idx, []):
         btn = page["buttons"][b_idx]
-        bg_path = btn.get("background")
-        icon_path = btn.get("icon")
-
-        bg_frames = load_gif_frames(bg_path, (BTN_W - 4, BTN_H - 4), use_cover=True) if bg_path else None
-        icon_frames = load_gif_frames(icon_path, (50, 50)) if icon_path else None
-
-        num_frames = max(
-            len(bg_frames) if bg_frames else 1,
-            len(icon_frames) if icon_frames else 1
-        )
-
+        bg_frames = load_gif_frames(btn.get("background"), (BTN_W - 4, BTN_H - 4), use_cover=True)
+        icon_frames = load_gif_frames(btn.get("icon"), (50, 50))
+        num_frames = max(len(bg_frames) if bg_frames else 1, len(icon_frames) if icon_frames else 1)
         for f_idx in range(num_frames):
-            btn_img = Image.new("RGB", (BTN_W, BTN_H), tuple(btn.get("color", [100, 100, 100])))
+            btn_img = Image.new("RGB", (BTN_W, BTN_H), tuple(btn.get("color", [60, 60, 80])))
             draw = ImageDraw.Draw(btn_img)
-            draw.rounded_rectangle([0, 0, BTN_W-1, BTN_H-1], radius=12, outline=(255,255,255), width=2)
-
+            draw.rounded_rectangle([0, 0, BTN_W-1, BTN_H-1], radius=12, outline=CYBER_ORANGE, width=2)
             if bg_frames:
-                bg_frame = bg_frames[f_idx % len(bg_frames)]
-                btn_img.paste(bg_frame, (2, 2), bg_frame)
-
+                btn_img.paste(bg_frames[f_idx % len(bg_frames)], (2, 2), bg_frames[f_idx % len(bg_frames)])
             if icon_frames:
-                icon_frame = icon_frames[f_idx % len(icon_frames)]
-                icon_x = (BTN_W - 50) // 2
-                btn_img.paste(icon_frame, (icon_x, 10), icon_frame)
-
+                btn_img.paste(icon_frames[f_idx % len(icon_frames)], ((BTN_W - 50) // 2, 10), icon_frames[f_idx % len(icon_frames)])
             label = btn.get("label", "")
             if label:
-                bbox = draw.textbbox((0,0), label, font=font_btn)
-                tw = bbox[2] - bbox[0]
-                draw.text(((BTN_W - tw)//2, BTN_H - 25), label, fill=(255,255,255), font=font_btn)
-
+                bbox = draw.textbbox((0, 0), label, font=font_btn)
+                draw.text(((BTN_W - bbox[2] + bbox[0]) // 2, BTN_H - 25), label, fill=CYBER_BRIGHT, font=font_btn)
             arr = np.array(btn_img, dtype=np.uint16)
             rgb565 = ((arr[:,:,0] >> 3) << 11) | ((arr[:,:,1] >> 2) << 5) | (arr[:,:,2] >> 3)
             gif_frame_cache[(p_idx, b_idx, f_idx)] = rgb565.astype(np.uint16).tobytes()
-
         gif_frame_indices[f"btn_{{p_idx}}_{{b_idx}}_max"] = num_frames
 
 print(f"Pre-rendered {{len(gif_frame_cache)}} GIF frames!")
@@ -1684,15 +2172,11 @@ def show_button_page(page_idx, highlight=-1):
 
 def render_button_to_fb(page_idx, btn_idx):
     x1, y1, x2, y2 = get_btn_rect(btn_idx)
-
     frame_idx = gif_frame_indices.get(f"btn_{{page_idx}}_{{btn_idx}}", 0)
     max_frames = gif_frame_indices.get(f"btn_{{page_idx}}_{{btn_idx}}_max", 1)
-    actual_frame = frame_idx % max_frames
-
-    btn_bytes = gif_frame_cache.get((page_idx, btn_idx, actual_frame))
+    btn_bytes = gif_frame_cache.get((page_idx, btn_idx, frame_idx % max_frames))
     if not btn_bytes:
         return
-
     for row in range(BTN_H):
         offset = ((y1 + row) * WIDTH + x1) * 2
         row_start = row * BTN_W * 2
@@ -1712,14 +2196,14 @@ def send_action(action, app_path=None):
         return
     try:
         if action == "custom_app" and app_path:
-            import urllib.parse
-            encoded_path = urllib.parse.quote(app_path, safe='')
-            requests.get(f"http://{{WINDOWS_PC_IP}}:{{WINDOWS_PORT}}/launch?path={{encoded_path}}", timeout=0.5)
+            from urllib.parse import quote
+            requests.get(f"http://{{WINDOWS_PC_IP}}:{{WINDOWS_PORT}}/launch?path={{quote(app_path, safe='')}}", timeout=0.5)
         else:
             requests.get(f"http://{{WINDOWS_PC_IP}}:{{WINDOWS_PORT}}/action/{{action}}", timeout=0.3)
     except:
         pass
 
+# ============== MAIN LOOP ==============
 def touch_to_screen(tx, ty):
     sx = int((tx - CAL_X_MIN) / (CAL_X_MAX - CAL_X_MIN) * WIDTH)
     sy = int((ty - CAL_Y_MIN) / (CAL_Y_MAX - CAL_Y_MIN) * HEIGHT)
@@ -1727,45 +2211,40 @@ def touch_to_screen(tx, ty):
         sy = HEIGHT - sy
     return max(0, min(WIDTH-1, sx)), max(0, min(HEIGHT-1, sy))
 
+def render_current_page():
+{dispatch_code}
+
 print("Ready!")
-render_dashboard()
+render_current_page()
 touch = InputDevice(TOUCH_DEV)
 
 touch_x, touch_y = 0, 0
 touching = False
 pending_touch = False
+page_selector_active = False
 last_gif_update = time.time()
 last_dashboard_update = time.time()
 GIF_INTERVAL = 0.06
-GIF_INTERVAL_MIN = 0.06
-GIF_INTERVAL_MAX = 0.12
 DASHBOARD_INTERVAL = 1.0
 
 while True:
-    if current_page == 0:
+    if current_page < NUM_DASHBOARD_PAGES:
         timeout = 0.5
-    elif HAS_GIFS and current_page > 0:
+    elif HAS_GIFS:
         timeout = 0.03
     else:
         timeout = None
 
     r, w, x = select.select([touch.fd], [], [], timeout)
 
-    if current_page == 0 and time.time() - last_dashboard_update > DASHBOARD_INTERVAL:
-        render_dashboard()
-        last_dashboard_update = time.time()
-
-    if current_page > 0 and HAS_GIFS and time.time() - last_gif_update > GIF_INTERVAL:
-        render_start = time.time()
-        advance_gif_frames()
-        update_gif_buttons(current_page - 1)
-        render_time = time.time() - render_start
-        last_gif_update = time.time()
-
-        if render_time > GIF_INTERVAL * 0.5:
-            GIF_INTERVAL = min(GIF_INTERVAL_MAX, GIF_INTERVAL + 0.005)
-        elif render_time < GIF_INTERVAL * 0.2 and GIF_INTERVAL > GIF_INTERVAL_MIN:
-            GIF_INTERVAL = max(GIF_INTERVAL_MIN, GIF_INTERVAL - 0.005)
+    if not page_selector_active:
+        if current_page < NUM_DASHBOARD_PAGES and time.time() - last_dashboard_update > DASHBOARD_INTERVAL:
+            render_current_page()
+            last_dashboard_update = time.time()
+        if current_page >= NUM_DASHBOARD_PAGES and HAS_GIFS and time.time() - last_gif_update > GIF_INTERVAL:
+            advance_gif_frames()
+            update_gif_buttons(current_page - NUM_DASHBOARD_PAGES)
+            last_gif_update = time.time()
 
     if r:
         for event in touch.read():
@@ -1785,26 +2264,33 @@ while True:
                     pending_touch = False
                     sx, sy = touch_to_screen(touch_x, touch_y)
 
+                    if page_selector_active:
+                        selected = get_page_from_grid(sx, sy)
+                        if selected >= 0:
+                            current_page = selected
+                        page_selector_active = False
+                        render_current_page()
+                        continue
+
                     if sx >= RIGHT_NAV[0] and sy >= NAV_Y:
                         if current_page < TOTAL_PAGES - 1:
                             current_page += 1
-                            if current_page == 0:
-                                render_dashboard()
-                            else:
-                                show_button_page(current_page - 1)
+                            render_current_page()
                         continue
 
                     if sx <= LEFT_NAV[2] and sy >= NAV_Y:
                         if current_page > 0:
                             current_page -= 1
-                            if current_page == 0:
-                                render_dashboard()
-                            else:
-                                show_button_page(current_page - 1)
+                            render_current_page()
                         continue
 
-                    if current_page > 0:
-                        btn_page_idx = current_page - 1
+                    if LEFT_NAV[2] < sx < RIGHT_NAV[0] and sy >= NAV_Y:
+                        page_selector_active = True
+                        render_page_selector()
+                        continue
+
+                    if current_page >= NUM_DASHBOARD_PAGES:
+                        btn_page_idx = current_page - NUM_DASHBOARD_PAGES
                         for i, btn in enumerate(BUTTON_PAGES[btn_page_idx]["buttons"]):
                             x1, y1, x2, y2 = get_btn_rect(i)
                             if x1 <= sx <= x2 and y1 <= sy <= y2:

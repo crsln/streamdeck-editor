@@ -8,7 +8,32 @@
   "current_profile": "Default",
   "pages": [
     {
+      "name": "System Monitor",
+      "type": "dashboard",
+      "dashboard_type": "system_monitor",
+      "refresh_interval": 2
+    },
+    {
+      "name": "Windows PC",
+      "type": "dashboard",
+      "dashboard_type": "windows_pc",
+      "refresh_interval": 2
+    },
+    {
+      "name": "Pi-hole",
+      "type": "dashboard",
+      "dashboard_type": "pihole",
+      "refresh_interval": 5
+    },
+    {
+      "name": "Docker",
+      "type": "dashboard",
+      "dashboard_type": "docker",
+      "refresh_interval": 3
+    },
+    {
       "name": "Page 1",
+      "type": "button",
       "buttons": [
         {
           "label": "PLAY",
@@ -86,6 +111,7 @@
     },
     {
       "name": "Page 2",
+      "type": "button",
       "buttons": [
         {
           "label": "vscode",
