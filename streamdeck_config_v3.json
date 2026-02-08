@@ -1,0 +1,165 @@
+{
+  "windows_ip": "192.168.1.13",
+  "background_color": [
+    25,
+    25,
+    35
+  ],
+  "current_profile": "Default",
+  "pages": [
+    {
+      "name": "Page 1",
+      "buttons": [
+        {
+          "label": "PLAY",
+          "action": "media_playpause",
+          "color": [
+            46,
+            204,
+            113
+          ],
+          "icon": null,
+          "background": "streamdeck_icons\\giphy3.webp",
+          "app_path": null
+        },
+        {
+          "label": "NEXT",
+          "action": "media_next",
+          "color": [
+            52,
+            152,
+            219
+          ],
+          "icon": null,
+          "background": "streamdeck_icons\\200.webp",
+          "app_path": null
+        },
+        {
+          "label": "PREV",
+          "action": "media_prev",
+          "color": [
+            155,
+            89,
+            182
+          ],
+          "icon": null,
+          "background": "streamdeck_icons\\In Love Cat GIF.gif",
+          "app_path": null
+        },
+        {
+          "label": "MUTE",
+          "action": "volume_mute",
+          "color": [
+            231,
+            76,
+            60
+          ],
+          "icon": null,
+          "background": "streamdeck_icons\\bbc classics GIF by.gif",
+          "app_path": null
+        },
+        {
+          "label": "BRAVE",
+          "action": "custom_app",
+          "color": [
+            60,
+            60,
+            80
+          ],
+          "icon": null,
+          "background": "streamdeck_icons\\Lion Roar GIF by Bro.gif",
+          "app_path": "C:/Program Files/BraveSoftware/Brave-Browser/Application/brave.exe"
+        },
+        {
+          "label": "SPOTIFY",
+          "action": "custom_app",
+          "color": [
+            60,
+            60,
+            80
+          ],
+          "icon": null,
+          "background": "streamdeck_icons\\Happy Big Lebowski G.gif",
+          "app_path": "C:/Users/Cem/Desktop/Spotify.lnk"
+        }
+      ]
+    },
+    {
+      "name": "Page 2",
+      "buttons": [
+        {
+          "label": "vscode",
+          "action": "",
+          "color": [
+            60,
+            60,
+            80
+          ],
+          "icon": null,
+          "background": null,
+          "app_path": "C:/Users/Cem/AppData/Local/Programs/Microsoft VS Code/Code.exe"
+        },
+        {
+          "label": "",
+          "action": "",
+          "color": [
+            60,
+            60,
+            80
+          ],
+          "icon": null,
+          "background": null,
+          "app_path": null
+        },
+        {
+          "label": "",
+          "action": "",
+          "color": [
+            60,
+            60,
+            80
+          ],
+          "icon": null,
+          "background": null,
+          "app_path": null
+        },
+        {
+          "label": "",
+          "action": "",
+          "color": [
+            60,
+            60,
+            80
+          ],
+          "icon": null,
+          "background": null,
+          "app_path": null
+        },
+        {
+          "label": "",
+          "action": "",
+          "color": [
+            60,
+            60,
+            80
+          ],
+          "icon": null,
+          "background": null,
+          "app_path": null
+        },
+        {
+          "label": "",
+          "action": "",
+          "color": [
+            60,
+            60,
+            80
+          ],
+          "icon": null,
+          "background": null,
+          "app_path": null
+        }
+      ]
+    }
+  ]
+}

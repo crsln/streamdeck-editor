@@ -1,0 +1,142 @@
+{
+  "windows_ip": "192.168.1.13",
+  "background_color": [
+    25,
+    25,
+    35
+  ],
+  "pages": [
+    {
+      "name": "Media",
+      "buttons": [
+        {
+          "label": "PLAY",
+          "action": "media_playpause",
+          "color": [
+            78,
+            90,
+            243
+          ],
+          "icon": null
+        },
+        {
+          "label": "NEXT",
+          "action": "media_next",
+          "color": [
+            52,
+            152,
+            219
+          ],
+          "icon": null
+        },
+        {
+          "label": "PREV",
+          "action": "media_prev",
+          "color": [
+            155,
+            89,
+            182
+          ],
+          "icon": null
+        },
+        {
+          "label": "VOL+",
+          "action": "volume_up",
+          "color": [
+            241,
+            196,
+            15
+          ],
+          "icon": null
+        },
+        {
+          "label": "VOL-",
+          "action": "volume_down",
+          "color": [
+            230,
+            126,
+            34
+          ],
+          "icon": null
+        },
+        {
+          "label": "MUTE",
+          "action": "volume_mute",
+          "color": [
+            231,
+            76,
+            60
+          ],
+          "icon": null
+        }
+      ]
+    },
+    {
+      "name": "Apps",
+      "buttons": [
+        {
+          "label": "BRAVE",
+          "action": "custom_app",
+          "color": [
+            192,
+            57,
+            43
+          ],
+          "icon": null,
+          "background": "streamdeck_icons\\1_Oo-yD7aMoyr5asz8Ysibyg.jpg",
+          "app_path": "C:/Program Files/BraveSoftware/Brave-Browser/Application/brave.exe"
+        },
+        {
+          "label": "STREAM",
+          "action": "obs_stream",
+          "color": [
+            142,
+            68,
+            173
+          ],
+          "icon": null
+        },
+        {
+          "label": "NOTE",
+          "action": "open_notepad",
+          "color": [
+            22,
+            160,
+            133
+          ],
+          "icon": null
+        },
+        {
+          "label": "LOCK",
+          "action": "lock_screen",
+          "color": [
+            44,
+            62,
+            80
+          ],
+          "icon": null
+        },
+        {
+          "label": "SNAP",
+          "action": "screenshot",
+          "color": [
+            41,
+            128,
+            185
+          ],
+          "icon": null
+        },
+        {
+          "label": "WEB",
+          "action": "open_browser",
+          "color": [
+            39,
+            174,
+            96
+          ],
+          "icon": null
+        }
+      ]
+    }
+  ]
+}

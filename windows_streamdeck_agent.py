@@ -64,6 +64,22 @@ def do_action(action_name):
     else:
         return f"Unknown action: {action_name}", 404
 
+@app.route("/launch")
+def launch_app():
+    from flask import request
+    from urllib.parse import unquote
+    path = request.args.get("path", "")
+    if path:
+        path = unquote(path)
+        try:
+            subprocess.Popen(f'start "" "{path}"', shell=True)
+            print(f"✓ Launched: {path}")
+            return f"OK: launched {path}"
+        except Exception as e:
+            print(f"✗ Error launching: {path} - {e}")
+            return f"Error: {e}", 500
+    return "Error: no path provided", 400
+
 if __name__ == "__main__":
     print("=" * 50)
     print("  STREAM DECK AGENT")

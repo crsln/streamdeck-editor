@@ -10,7 +10,7 @@ Requirements: pip install paramiko pillow
 """
 
 import tkinter as tk
-from tkinter import ttk, colorchooser, filedialog, messagebox
+from tkinter import ttk, colorchooser, filedialog
 from PIL import Image, ImageTk, ImageDraw
 import json
 import os
@@ -30,8 +30,8 @@ AVAILABLE_ACTIONS = [
     "media_playpause", "media_next", "media_prev", "media_stop",
     "volume_up", "volume_down", "volume_mute",
     "obs_record", "obs_stream", "obs_scene1", "obs_scene2",
-    "open_notepad", "open_calculator", "open_browser",
-    "lock_screen", "screenshot", "copy", "paste", "undo", "select_all"
+    "lock_screen", "screenshot", "copy", "paste", "undo", "select_all",
+    "custom_app"
 ]
 
 DEFAULT_CONFIG = {
@@ -92,7 +92,7 @@ class StreamDeckEditor:
     def save_config(self):
         with open(CONFIG_FILE, 'w') as f:
             json.dump(self.config, f, indent=2)
-        messagebox.showinfo("Saved", "Configuration saved!")
+        self.show_status("Configuration saved!")
     
     def create_ui(self):
         # Main container
@@ -172,23 +172,31 @@ class StreamDeckEditor:
         # Bottom buttons
         bottom = tk.Frame(right, bg="#1a1a2e")
         bottom.pack(fill=tk.X)
-        
+
         tk.Button(bottom, text="💾 Save Config", command=self.save_config,
                  bg="#3498db", fg="white", font=("Segoe UI", 11, "bold"),
                  padx=15, pady=8).pack(side=tk.LEFT, padx=5)
-        
-        tk.Button(bottom, text="📤 Upload to Pi", command=self.upload_to_pi,
-                 bg="#9b59b6", fg="white", font=("Segoe UI", 11, "bold"),
-                 padx=15, pady=8).pack(side=tk.LEFT, padx=5)
-        
-        tk.Button(bottom, text="🚀 Start on Pi", command=self.start_on_pi,
-                 bg="#e74c3c", fg="white", font=("Segoe UI", 11, "bold"),
-                 padx=15, pady=8).pack(side=tk.LEFT, padx=5)
+
+        tk.Button(bottom, text="🚀 Deploy to Pi", command=self.deploy_to_pi,
+                 bg="#27ae60", fg="white", font=("Segoe UI", 11, "bold"),
+                 padx=20, pady=8).pack(side=tk.LEFT, padx=5)
+
+        # Status bar
+        self.status_label = tk.Label(right, text="", font=("Segoe UI", 10),
+                                     bg="#1a1a2e", fg="#888", anchor="w")
+        self.status_label.pack(fill=tk.X, pady=(10, 0))
     
     def update_bg_color_btn(self):
         color = self.config.get("background_color", [25, 25, 35])
         hex_color = "#{:02x}{:02x}{:02x}".format(*color)
         self.bg_color_btn.configure(bg=hex_color)
+
+    def show_status(self, message, is_error=False):
+        """Show status message in the status bar"""
+        color = "#e74c3c" if is_error else "#2ecc71"
+        self.status_label.config(text=message, fg=color)
+        # Clear after 5 seconds
+        self.root.after(5000, lambda: self.status_label.config(text="", fg="#888"))
     
     def pick_bg_color(self):
         color = colorchooser.askcolor(title="Background Color")[0]
@@ -216,35 +224,47 @@ class StreamDeckEditor:
         
         self.button_rects = []
         
+        if not hasattr(self, 'photos'):
+            self.photos = []
+        self.photos.clear()
+
         for i, btn in enumerate(buttons):
             row, col = i // cols, i % cols
             x1 = margin + col * (btn_w + margin)
             y1 = margin + row * (btn_h + margin)
             x2 = x1 + btn_w
             y2 = y1 + btn_h
-            
+
             color = btn.get("color", [100, 100, 100])
             hex_color = "#{:02x}{:02x}{:02x}".format(*color)
-            
-            # Draw button
+
+            # Draw button background color first
             self.preview_canvas.create_rectangle(x1, y1, x2, y2, fill=hex_color,
                                                   outline="white", width=2)
-            
-            # Draw icon or label
+
+            # Draw background image (fills button)
+            bg_path = btn.get("background")
+            if bg_path and os.path.exists(bg_path):
+                try:
+                    img = Image.open(bg_path).resize((btn_w - 4, btn_h - 4))
+                    photo = ImageTk.PhotoImage(img)
+                    self.preview_canvas.create_image(x1 + 2, y1 + 2, image=photo, anchor="nw")
+                    self.photos.append(photo)
+                except:
+                    pass
+
+            # Draw icon (small, centered top)
             icon_path = btn.get("icon")
             if icon_path and os.path.exists(icon_path):
                 try:
                     img = Image.open(icon_path).resize((50, 50))
                     photo = ImageTk.PhotoImage(img)
-                    self.preview_canvas.create_image((x1+x2)//2, (y1+y2)//2 - 10, image=photo)
-                    # Keep reference
-                    if not hasattr(self, 'photos'):
-                        self.photos = []
+                    self.preview_canvas.create_image((x1+x2)//2, y1 + 35, image=photo)
                     self.photos.append(photo)
                 except:
                     pass
-            
-            # Label
+
+            # Label at bottom
             label = btn.get("label", "")
             self.preview_canvas.create_text((x1+x2)//2, y2 - 15, text=label,
                                             fill="white", font=("Segoe UI", 10, "bold"))
@@ -274,7 +294,11 @@ class StreamDeckEditor:
     def select_button(self, idx):
         self.selected_button = idx
         btn = self.config["pages"][self.current_page]["buttons"][idx]
-        
+
+        # Initialize selections with current values
+        self.selected_background = btn.get("background")
+        self.selected_icon = btn.get("icon")
+
         # Clear editor frame
         for widget in self.editor_frame.winfo_children():
             widget.destroy()
@@ -299,7 +323,24 @@ class StreamDeckEditor:
         self.action_combo = ttk.Combobox(action_row, values=AVAILABLE_ACTIONS, width=18)
         self.action_combo.set(btn.get("action", ""))
         self.action_combo.pack(side=tk.LEFT, padx=5)
-        
+
+        # App Path (for custom_app action)
+        app_row = tk.Frame(self.editor_frame, bg="#16213e")
+        app_row.pack(fill=tk.X, pady=5)
+        tk.Label(app_row, text="App Path:", bg="#16213e", fg="white", width=10,
+                anchor="w").pack(side=tk.LEFT)
+
+        app_path = btn.get("app_path", "")
+        self.app_path_label = tk.Label(app_row, text=os.path.basename(app_path) if app_path else "None",
+                                       bg="#16213e", fg="#aaa", width=12, anchor="w")
+        self.app_path_label.pack(side=tk.LEFT, padx=5)
+        self.selected_app_path = app_path
+
+        tk.Button(app_row, text="Browse", command=self.pick_app_path,
+                 bg="#4a4a6a", fg="white").pack(side=tk.LEFT, padx=2)
+        tk.Button(app_row, text="Clear", command=self.clear_app_path,
+                 bg="#6a4a4a", fg="white").pack(side=tk.LEFT, padx=2)
+
         # Color
         color_row = tk.Frame(self.editor_frame, bg="#16213e")
         color_row.pack(fill=tk.X, pady=5)
@@ -311,22 +352,38 @@ class StreamDeckEditor:
                                    command=self.pick_btn_color)
         self.color_btn.pack(side=tk.LEFT, padx=5)
         
-        # Icon
+        # Background image (fills button)
+        bg_row = tk.Frame(self.editor_frame, bg="#16213e")
+        bg_row.pack(fill=tk.X, pady=5)
+        tk.Label(bg_row, text="Background:", bg="#16213e", fg="white", width=10,
+                anchor="w").pack(side=tk.LEFT)
+
+        bg_path = btn.get("background", "")
+        self.bg_label = tk.Label(bg_row, text=os.path.basename(bg_path) if bg_path else "None",
+                                 bg="#16213e", fg="#aaa", width=12, anchor="w")
+        self.bg_label.pack(side=tk.LEFT, padx=5)
+
+        tk.Button(bg_row, text="Browse", command=self.pick_background,
+                 bg="#4a4a6a", fg="white").pack(side=tk.LEFT, padx=2)
+        tk.Button(bg_row, text="Clear", command=self.clear_background,
+                 bg="#6a4a4a", fg="white").pack(side=tk.LEFT, padx=2)
+
+        # Icon (small, on top)
         icon_row = tk.Frame(self.editor_frame, bg="#16213e")
         icon_row.pack(fill=tk.X, pady=5)
         tk.Label(icon_row, text="Icon:", bg="#16213e", fg="white", width=10,
                 anchor="w").pack(side=tk.LEFT)
-        
+
         icon_path = btn.get("icon", "")
         self.icon_label = tk.Label(icon_row, text=os.path.basename(icon_path) if icon_path else "None",
-                                   bg="#16213e", fg="#aaa", width=15, anchor="w")
+                                   bg="#16213e", fg="#aaa", width=12, anchor="w")
         self.icon_label.pack(side=tk.LEFT, padx=5)
-        
+
         tk.Button(icon_row, text="Browse", command=self.pick_icon,
-                 bg="#4a4a6a", fg="white").pack(side=tk.LEFT, padx=5)
+                 bg="#4a4a6a", fg="white").pack(side=tk.LEFT, padx=2)
         tk.Button(icon_row, text="Clear", command=self.clear_icon,
-                 bg="#6a4a4a", fg="white").pack(side=tk.LEFT, padx=5)
-        
+                 bg="#6a4a4a", fg="white").pack(side=tk.LEFT, padx=2)
+
         # Apply button
         tk.Button(self.editor_frame, text="✓ Apply Changes", command=self.apply_changes,
                  bg="#27ae60", fg="white", font=("Segoe UI", 11, "bold"),
@@ -339,18 +396,44 @@ class StreamDeckEditor:
             hex_color = "#{:02x}{:02x}{:02x}".format(*self.btn_color)
             self.color_btn.configure(bg=hex_color)
     
-    def pick_icon(self):
+    def pick_app_path(self):
         path = filedialog.askopenfilename(
-            filetypes=[("Images", "*.png *.jpg *.jpeg *.gif *.ico *.bmp")]
+            filetypes=[("Executables", "*.exe *.lnk *.bat *.cmd"), ("All files", "*.*")]
         )
         if path:
-            # Copy to icons directory
+            self.selected_app_path = path
+            self.app_path_label.config(text=os.path.basename(path))
+
+    def clear_app_path(self):
+        self.selected_app_path = None
+        self.app_path_label.config(text="None")
+
+    def pick_background(self):
+        path = filedialog.askopenfilename(
+            filetypes=[("Images", "*.png *.jpg *.jpeg *.gif *.bmp")]
+        )
+        if path:
+            filename = os.path.basename(path)
+            dest = os.path.join(LOCAL_ICONS_DIR, filename)
+            shutil.copy(path, dest)
+            self.selected_background = dest
+            self.bg_label.config(text=filename)
+
+    def clear_background(self):
+        self.selected_background = None
+        self.bg_label.config(text="None")
+
+    def pick_icon(self):
+        path = filedialog.askopenfilename(
+            filetypes=[("Images", "*.png *.jpg *.jpeg *.gif *.bmp")]
+        )
+        if path:
             filename = os.path.basename(path)
             dest = os.path.join(LOCAL_ICONS_DIR, filename)
             shutil.copy(path, dest)
             self.selected_icon = dest
             self.icon_label.config(text=filename)
-    
+
     def clear_icon(self):
         self.selected_icon = None
         self.icon_label.config(text="None")
@@ -358,15 +441,21 @@ class StreamDeckEditor:
     def apply_changes(self):
         if self.selected_button is None:
             return
-        
+
         btn = self.config["pages"][self.current_page]["buttons"][self.selected_button]
         btn["label"] = self.label_entry.get()
         btn["action"] = self.action_combo.get()
         btn["color"] = self.btn_color
-        
+
+        if hasattr(self, 'selected_app_path'):
+            btn["app_path"] = self.selected_app_path
+
+        if hasattr(self, 'selected_background'):
+            btn["background"] = self.selected_background
+
         if hasattr(self, 'selected_icon'):
             btn["icon"] = self.selected_icon
-        
+
         self.save_config()
         self.refresh_preview()
     
@@ -384,7 +473,7 @@ class StreamDeckEditor:
         new_page = {
             "name": f"Page {len(self.config['pages']) + 1}",
             "buttons": [
-                {"label": f"BTN{i+1}", "action": "", "color": [80, 80, 100], "icon": None}
+                {"label": f"BTN{i+1}", "action": "", "color": [80, 80, 100], "icon": None, "background": None}
                 for i in range(6)
             ]
         }
@@ -396,10 +485,7 @@ class StreamDeckEditor:
         """Generate the Pi script with current config"""
         config = self.config
         pages_code = json.dumps(config["pages"], indent=4)
-        # Convert JSON syntax to Python syntax
-        pages_code = pages_code.replace(': null', ': None').replace(':null', ':None')
-        pages_code = pages_code.replace(': true', ': True').replace(':true', ':True')
-        pages_code = pages_code.replace(': false', ': False').replace(':false', ':False')
+        pages_code = pages_code.replace("null", "None").replace("true", "True").replace("false", "False")
         bg_color = config.get("background_color", [25, 25, 35])
         windows_ip = self.ip_entry.get()
         
@@ -455,53 +541,55 @@ try:
 except:
     font_nav = font_btn
 
-def load_icon(path, size=(60, 60)):
+def load_image(path, size):
     if not path:
         return None
-    # Convert local path to Pi path
-    if path:
-        filename = os.path.basename(path)
-        pi_path = os.path.join(ICONS_DIR, filename)
-        if os.path.exists(pi_path):
-            try:
-                img = Image.open(pi_path).convert("RGBA").resize(size)
-                return img
-            except:
-                pass
+    # Handle both Windows and Unix paths - get just the filename
+    filename = path.split("/")[-1].split(chr(92))[-1]
+    pi_path = os.path.join(ICONS_DIR, filename)
+    if os.path.exists(pi_path):
+        try:
+            img = Image.open(pi_path).convert("RGBA").resize(size)
+            return img
+        except:
+            pass
     return None
 
 def make_frame_bytes(page_idx, highlight=-1):
     img = Image.new("RGB", (WIDTH, HEIGHT), BG_COLOR)
     draw = ImageDraw.Draw(img)
-    
+
     buttons = PAGES[page_idx]["buttons"]
-    
+
     for i, btn in enumerate(buttons):
         x1, y1, x2, y2 = get_btn_rect(i)
         color = tuple(btn.get("color", [100, 100, 100]))
         if i == highlight:
             color = (255, 255, 255)
-        
+
+        # Draw button background color
         draw.rounded_rectangle([x1, y1, x2, y2], radius=12, fill=color, outline=(255,255,255), width=2)
-        
-        # Try to load icon
-        icon = load_icon(btn.get("icon"))
-        if icon:
-            icon_x = x1 + (BTN_W - icon.width) // 2
-            icon_y = y1 + 10
-            img.paste(icon, (icon_x, icon_y), icon)
-            # Label below icon
-            label = btn.get("label", "")
-            if label:
-                bbox = draw.textbbox((0,0), label, font=font_btn)
-                tw = bbox[2] - bbox[0]
-                draw.text((x1 + (BTN_W - tw)//2, y2 - 25), label, fill=(255,255,255), font=font_btn)
-        else:
-            # Center label
-            label = btn.get("label", "")
+
+        # Only draw images if not highlighted (flash effect)
+        if i != highlight:
+            # Draw background image (fills button)
+            bg_img = load_image(btn.get("background"), (BTN_W - 4, BTN_H - 4))
+            if bg_img:
+                img.paste(bg_img, (x1 + 2, y1 + 2), bg_img)
+
+            # Draw icon (small, top center)
+            icon = load_image(btn.get("icon"), (50, 50))
+            if icon:
+                icon_x = x1 + (BTN_W - 50) // 2
+                icon_y = y1 + 10
+                img.paste(icon, (icon_x, icon_y), icon)
+
+        # Label at bottom
+        label = btn.get("label", "")
+        if label:
             bbox = draw.textbbox((0,0), label, font=font_btn)
-            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-            draw.text((x1 + (BTN_W - tw)//2, y1 + (BTN_H - th)//2), label, fill=(255,255,255), font=font_btn)
+            tw = bbox[2] - bbox[0]
+            draw.text((x1 + (BTN_W - tw)//2, y2 - 25), label, fill=(255,255,255), font=font_btn)
     
     # Navigation
     draw.rectangle([0, NAV_Y, WIDTH, HEIGHT], fill=(40, 40, 55))
@@ -535,11 +623,16 @@ def show(page, highlight=-1):
     fb_mmap.seek(0)
     fb_mmap.write(frame_cache[(page, highlight)])
 
-def send_action(action):
+def send_action(action, app_path=None):
     if not action:
         return
     try:
-        requests.get(f"http://{{WINDOWS_PC_IP}}:{{WINDOWS_PORT}}/action/{{action}}", timeout=0.3)
+        if action == "custom_app" and app_path:
+            import urllib.parse
+            encoded_path = urllib.parse.quote(app_path, safe='')
+            requests.get(f"http://{{WINDOWS_PC_IP}}:{{WINDOWS_PORT}}/launch?path={{encoded_path}}", timeout=0.5)
+        else:
+            requests.get(f"http://{{WINDOWS_PC_IP}}:{{WINDOWS_PORT}}/action/{{action}}", timeout=0.3)
     except:
         pass
 
@@ -591,7 +684,7 @@ for event in touch.read_loop():
                 x1, y1, x2, y2 = get_btn_rect(i)
                 if x1 <= sx <= x2 and y1 <= sy <= y2:
                     show(current_page, i)
-                    send_action(btn.get("action"))
+                    send_action(btn.get("action"), btn.get("app_path"))
                     time.sleep(0.05)
                     show(current_page)
                     break
@@ -602,62 +695,119 @@ for event in touch.read_loop():
         try:
             import paramiko
         except ImportError:
-            messagebox.showerror("Error", "paramiko required!\npip install paramiko")
+            self.show_status("paramiko required! pip install paramiko", is_error=True)
             return
-        
+
         try:
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             ssh.connect(PI_HOST, username=PI_USER, password=PI_PASS, timeout=10)
-            
+
             sftp = ssh.open_sftp()
-            
+
             # Create icons directory
             try:
                 sftp.mkdir(PI_ICONS_DIR)
             except:
                 pass
-            
+
             # Upload icons
             if os.path.exists(LOCAL_ICONS_DIR):
                 for filename in os.listdir(LOCAL_ICONS_DIR):
                     local_path = os.path.join(LOCAL_ICONS_DIR, filename)
                     remote_path = f"{PI_ICONS_DIR}/{filename}"
                     sftp.put(local_path, remote_path)
-            
+
             # Upload script
             script = self.generate_pi_script()
             with sftp.file(PI_SCRIPT, 'w') as f:
                 f.write(script)
-            
+
             sftp.close()
             ssh.close()
-            
-            messagebox.showinfo("Success", "Uploaded to Pi!")
+
+            self.show_status("Uploaded to Pi!")
         except Exception as e:
-            messagebox.showerror("Error", f"Upload failed:\n{e}")
+            self.show_status(f"Upload failed: {e}", is_error=True)
     
     def start_on_pi(self):
         try:
             import paramiko
         except ImportError:
-            messagebox.showerror("Error", "paramiko required!\npip install paramiko")
+            self.show_status("paramiko required! pip install paramiko", is_error=True)
             return
-        
+
         try:
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             ssh.connect(PI_HOST, username=PI_USER, password=PI_PASS, timeout=10)
-            
+
             ssh.exec_command("sudo pkill -f streamdeck_fast.py")
             import time
             time.sleep(1)
             ssh.exec_command(f"nohup sudo python3 {PI_SCRIPT} &")
             ssh.close()
-            
-            messagebox.showinfo("Success", "Stream Deck started on Pi!")
+
+            self.show_status("Stream Deck started on Pi!")
         except Exception as e:
-            messagebox.showerror("Error", f"Start failed:\n{e}")
+            self.show_status(f"Start failed: {e}", is_error=True)
+
+    def deploy_to_pi(self):
+        """Upload config and restart script on Pi in one click"""
+        try:
+            import paramiko
+        except ImportError:
+            self.show_status("paramiko required! pip install paramiko", is_error=True)
+            return
+
+        try:
+            # Save current config first
+            self.config["windows_ip"] = self.ip_entry.get()
+            with open(CONFIG_FILE, 'w') as f:
+                json.dump(self.config, f, indent=2)
+
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            ssh.connect(PI_HOST, username=PI_USER, password=PI_PASS, timeout=10)
+
+            sftp = ssh.open_sftp()
+
+            # Create icons directory
+            try:
+                sftp.mkdir(PI_ICONS_DIR)
+            except:
+                pass
+
+            # Upload icons
+            if os.path.exists(LOCAL_ICONS_DIR):
+                for filename in os.listdir(LOCAL_ICONS_DIR):
+                    local_path = os.path.join(LOCAL_ICONS_DIR, filename)
+                    remote_path = f"{PI_ICONS_DIR}/{filename}"
+                    sftp.put(local_path, remote_path)
+
+            # Upload script
+            script = self.generate_pi_script()
+            with sftp.file(PI_SCRIPT, 'w') as f:
+                f.write(script)
+
+            sftp.close()
+
+            # Stop old script - wait for completion
+            stdin, stdout, stderr = ssh.exec_command("sudo pkill -9 -f streamdeck_fast.py")
+            stdout.channel.recv_exit_status()  # Wait for command to complete
+
+            import time
+            time.sleep(2)
+
+            # Start new script
+            ssh.exec_command(f"sudo python3 {PI_SCRIPT} > /dev/null 2>&1 &")
+            time.sleep(1)
+
+            ssh.close()
+
+            self.show_status("Deployed to Pi!")
+        except Exception as e:
+            self.show_status(f"Deploy failed: {e}", is_error=True)
 
 if __name__ == "__main__":
     root = tk.Tk()

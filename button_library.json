@@ -1,0 +1,197 @@
+[
+  {
+    "name": "Play/Pause",
+    "label": "PLAY",
+    "action": "media_playpause",
+    "color": [
+      46,
+      204,
+      113
+    ],
+    "icon": null,
+    "background": null,
+    "app_path": null
+  },
+  {
+    "name": "Next Track",
+    "label": "NEXT",
+    "action": "media_next",
+    "color": [
+      52,
+      152,
+      219
+    ],
+    "icon": null,
+    "background": null,
+    "app_path": null
+  },
+  {
+    "name": "Prev Track",
+    "label": "PREV",
+    "action": "media_prev",
+    "color": [
+      155,
+      89,
+      182
+    ],
+    "icon": null,
+    "background": null,
+    "app_path": null
+  },
+  {
+    "name": "Volume Up",
+    "label": "VOL+",
+    "action": "volume_up",
+    "color": [
+      241,
+      196,
+      15
+    ],
+    "icon": null,
+    "background": null,
+    "app_path": null
+  },
+  {
+    "name": "Volume Down",
+    "label": "VOL-",
+    "action": "volume_down",
+    "color": [
+      230,
+      126,
+      34
+    ],
+    "icon": null,
+    "background": null,
+    "app_path": null
+  },
+  {
+    "name": "Mute",
+    "label": "MUTE",
+    "action": "volume_mute",
+    "color": [
+      231,
+      76,
+      60
+    ],
+    "icon": null,
+    "background": null,
+    "app_path": null
+  },
+  {
+    "name": "OBS Record",
+    "label": "REC",
+    "action": "obs_record",
+    "color": [
+      192,
+      57,
+      43
+    ],
+    "icon": null,
+    "background": null,
+    "app_path": null
+  },
+  {
+    "name": "OBS Stream",
+    "label": "STREAM",
+    "action": "obs_stream",
+    "color": [
+      142,
+      68,
+      173
+    ],
+    "icon": null,
+    "background": null,
+    "app_path": null
+  },
+  {
+    "name": "Lock Screen",
+    "label": "LOCK",
+    "action": "lock_screen",
+    "color": [
+      44,
+      62,
+      80
+    ],
+    "icon": null,
+    "background": null,
+    "app_path": null
+  },
+  {
+    "name": "Screenshot",
+    "label": "SNAP",
+    "action": "screenshot",
+    "color": [
+      41,
+      128,
+      185
+    ],
+    "icon": null,
+    "background": null,
+    "app_path": null
+  },
+  {
+    "name": "Copy",
+    "label": "COPY",
+    "action": "copy",
+    "color": [
+      39,
+      174,
+      96
+    ],
+    "icon": null,
+    "background": null,
+    "app_path": null
+  },
+  {
+    "name": "Paste",
+    "label": "PASTE",
+    "action": "paste",
+    "color": [
+      211,
+      84,
+      0
+    ],
+    "icon": null,
+    "background": null,
+    "app_path": null
+  },
+  {
+    "name": "Undo",
+    "label": "UNDO",
+    "action": "undo",
+    "color": [
+      127,
+      140,
+      141
+    ],
+    "icon": null,
+    "background": null,
+    "app_path": null
+  },
+  {
+    "label": "PLAY",
+    "action": "media_playpause",
+    "color": [
+      46,
+      204,
+      113
+    ],
+    "icon": null,
+    "background": "streamdeck_icons\\giphy3.webp",
+    "app_path": null,
+    "name": "play2"
+  },
+  {
+    "label": "SPOTIFY",
+    "action": "custom_app",
+    "color": [
+      60,
+      60,
+      80
+    ],
+    "icon": null,
+    "background": "streamdeck_icons\\Happy Big Lebowski G.gif",
+    "app_path": "C:/Users/Cem/Desktop/Spotify.lnk",
+    "name": "sptfy"
+  }
+]
