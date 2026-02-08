@@ -14,7 +14,7 @@ Requirements: pip install paramiko pillow requests
 
 import tkinter as tk
 from tkinter import ttk, colorchooser, filedialog, simpledialog
-from PIL import Image, ImageTk, ImageDraw
+from PIL import Image, ImageTk, ImageDraw, ImageFont
 import json
 import os
 import shutil
@@ -44,6 +44,254 @@ def cover_resize(img, target_w, target_h):
     left = (new_w - target_w) // 2
     top = (new_h - target_h) // 2
     return img.crop((left, top, left + target_w, top + target_h))
+
+# ============== DASHBOARD PREVIEW RENDERING ==============
+_BG = (8, 8, 18)
+_ORANGE = (255, 160, 0)
+_GOLD = (255, 200, 50)
+_BRIGHT = (255, 230, 120)
+_DIM = (180, 130, 40)
+_CYAN = (0, 220, 255)
+_GREEN = (0, 255, 120)
+_RED = (255, 80, 80)
+_PURPLE = (200, 100, 255)
+_NAV_Y = 320 - 38
+
+try:
+    _font_big = ImageFont.truetype("segoeuib.ttf", 28)
+    _font_large = ImageFont.truetype("segoeuib.ttf", 24)
+    _font_med = ImageFont.truetype("segoeuib.ttf", 16)
+    _font_sm = ImageFont.truetype("segoeui.ttf", 13)
+    _font_tiny = ImageFont.truetype("segoeui.ttf", 11)
+except:
+    _font_big = _font_large = _font_med = _font_sm = _font_tiny = ImageFont.load_default()
+
+def _cyber_box(draw, x, y, w, h, color=_ORANGE):
+    glow = (color[0]//4, color[1]//4, color[2]//4)
+    draw.rectangle([x-1, y-1, x+w+1, y+h+1], outline=glow, width=1)
+    draw.rectangle([x, y, x+w, y+h], outline=color, width=3)
+    cl = 15
+    draw.line([x, y+cl, x, y], fill=color, width=3)
+    draw.line([x, y, x+cl, y], fill=color, width=3)
+    draw.line([x+cl, y, x+cl, y+8], fill=color, width=2)
+    draw.ellipse([x+cl-2, y+8, x+cl+2, y+12], fill=color)
+    draw.line([x+w-cl, y, x+w, y], fill=color, width=3)
+    draw.line([x+w, y, x+w, y+cl], fill=color, width=3)
+    draw.line([x+w-cl, y, x+w-cl, y+8], fill=color, width=2)
+    draw.ellipse([x+w-cl-2, y+8, x+w-cl+2, y+12], fill=color)
+    draw.line([x, y+h-cl, x, y+h], fill=color, width=3)
+    draw.line([x, y+h, x+cl, y+h], fill=color, width=3)
+    draw.line([x+cl, y+h, x+cl, y+h-8], fill=color, width=2)
+    draw.ellipse([x+cl-2, y+h-12, x+cl+2, y+h-8], fill=color)
+    draw.line([x+w-cl, y+h, x+w, y+h], fill=color, width=3)
+    draw.line([x+w, y+h-cl, x+w, y+h], fill=color, width=3)
+    draw.line([x+w-cl, y+h, x+w-cl, y+h-8], fill=color, width=2)
+    draw.ellipse([x+w-cl-2, y+h-12, x+w-cl+2, y+h-8], fill=color)
+
+def _seg_bar(draw, x, y, w, h, pct, segs=10):
+    gap = 3
+    sw = (w - (segs - 1) * gap) // segs
+    filled = int(segs * pct / 100)
+    for i in range(segs):
+        sx = x + i * (sw + gap)
+        if i < filled:
+            p = (i + 1) * 100 / segs
+            if p < 30: c = (0, 255, 100)
+            elif p < 50: t = (p-30)/20; c = (int(255*t), 255, int(100*(1-t)))
+            elif p < 70: t = (p-50)/20; c = (255, int(255-55*t), 0)
+            elif p < 85: t = (p-70)/15; c = (255, int(200-150*t), 0)
+            else: c = (255, 50, 30)
+            draw.rectangle([sx, y, sx+sw, y+h], fill=c)
+            hl = (min(c[0]+40,255), min(c[1]+40,255), min(c[2]+40,255))
+            draw.line([sx+1, y+1, sx+sw-1, y+1], fill=hl, width=1)
+        else:
+            draw.rectangle([sx, y, sx+sw, y+h], fill=(20, 20, 30), outline=(50, 50, 60))
+
+def _nav_bar(draw, page_num, total):
+    draw.rectangle([0, _NAV_Y, 480, 320], fill=(10, 10, 18))
+    draw.line([0, _NAV_Y, 480, _NAV_Y], fill=_ORANGE, width=2)
+    if page_num > 0:
+        draw.rectangle([2, _NAV_Y+4, 73, 316], outline=_ORANGE, width=2)
+        draw.text((30, _NAV_Y+8), "<", fill=_BRIGHT, font=_font_med)
+    else:
+        draw.rectangle([2, _NAV_Y+4, 73, 316], outline=(80,60,20), width=1)
+        draw.text((30, _NAV_Y+8), "<", fill=(80,60,20), font=_font_med)
+    if page_num < total - 1:
+        draw.rectangle([407, _NAV_Y+4, 478, 316], outline=_ORANGE, width=2)
+        draw.text((435, _NAV_Y+8), ">", fill=_BRIGHT, font=_font_med)
+    else:
+        draw.rectangle([407, _NAV_Y+4, 478, 316], outline=(80,60,20), width=1)
+        draw.text((435, _NAV_Y+8), ">", fill=(80,60,20), font=_font_med)
+    cx = 240
+    ds = 18
+    tw = (total - 1) * ds
+    bw = tw + 40
+    draw.rectangle([cx-bw//2, _NAV_Y+4, cx+bw//2, 316], outline=_ORANGE, width=2)
+    sx = cx - tw // 2
+    dy = _NAV_Y + 19
+    for i in range(total):
+        dx = sx + i * ds
+        if i == page_num:
+            draw.ellipse([dx-5, dy-5, dx+5, dy+5], fill=_ORANGE)
+        else:
+            draw.ellipse([dx-3, dy-3, dx+3, dy+3], fill=(200,200,200))
+
+def render_system_preview(page_num=0, total=6):
+    img = Image.new("RGB", (480, 320), _BG)
+    draw = ImageDraw.Draw(img)
+    bw = (480 - 30) // 2
+    bh = _NAV_Y - 20
+    # Left box
+    _cyber_box(draw, 5, 5, bw, bh)
+    draw.text((15, 13), "RASPBERRY PI", fill=_BRIGHT, font=_font_med)
+    ry = 40
+    _seg_bar(draw, 15, ry, 95, 16, 42, 8)
+    draw.text((120, ry), "CPU: 42%", fill=_GOLD, font=_font_sm)
+    ry += 28
+    _seg_bar(draw, 15, ry, 95, 16, 51, 8)
+    draw.text((120, ry), "TEMP: 51C", fill=_GOLD, font=_font_sm)
+    ry += 28
+    _seg_bar(draw, 15, ry, 95, 16, 63, 8)
+    draw.text((120, ry), "MEM: 63%", fill=_GOLD, font=_font_sm)
+    ry += 28
+    _seg_bar(draw, 15, ry, 95, 16, 34, 8)
+    draw.text((120, ry), "DISK: 34%", fill=_GOLD, font=_font_sm)
+    # Right box
+    bx = 5 + bw + 10
+    _cyber_box(draw, bx, 5, bw, bh)
+    draw.text((bx+10, 13), "SYSTEM", fill=_BRIGHT, font=_font_med)
+    ry = 43
+    draw.text((bx+10, ry), "IP:", fill=_DIM, font=_font_sm)
+    draw.text((bx+35, ry), "192.168.1.112", fill=_CYAN, font=_font_sm)
+    ry += 28
+    draw.text((bx+10, ry), "UP:", fill=_DIM, font=_font_sm)
+    draw.text((bx+35, ry), "3D 14H", fill=_BRIGHT, font=_font_med)
+    ry += 32
+    draw.text((bx+10, ry), "RAM: 612/1024MB", fill=_GOLD, font=_font_sm)
+    ry += 26
+    draw.text((bx+10, ry), "DISK: 11/32GB", fill=_GOLD, font=_font_sm)
+    _nav_bar(draw, page_num, total)
+    return img
+
+def render_windows_preview(page_num=1, total=6):
+    img = Image.new("RGB", (480, 320), _BG)
+    draw = ImageDraw.Draw(img)
+    bw = (480 - 30) // 2
+    bh = (_NAV_Y - 20) // 2
+    gap = 10
+    # Box 1: CPU
+    _cyber_box(draw, 5, 5, bw, bh)
+    draw.text((15, 13), "CPU (24c)", fill=_BRIGHT, font=_font_med)
+    ry = 37
+    _seg_bar(draw, 15, ry, 95, 16, 41, 8)
+    draw.text((120, ry), "TEMP: 41C", fill=_GOLD, font=_font_sm)
+    ry += 26
+    _seg_bar(draw, 15, ry, 95, 16, 11, 8)
+    draw.text((120, ry), "LOAD: 11%", fill=_GOLD, font=_font_sm)
+    ry += 26
+    _seg_bar(draw, 15, ry, 95, 16, 68, 8)
+    draw.text((120, ry), "FREQ: 3400", fill=_GOLD, font=_font_sm)
+    # Box 2: GPU
+    bx = 5 + bw + gap
+    _cyber_box(draw, bx, 5, bw, bh)
+    draw.text((bx+10, 13), "GPU: RTX 4080", fill=_BRIGHT, font=_font_med)
+    ry = 37
+    _seg_bar(draw, bx+10, ry, 95, 16, 41, 8)
+    draw.text((bx+115, ry), "TEMP: 41C", fill=_GOLD, font=_font_sm)
+    ry += 26
+    _seg_bar(draw, bx+10, ry, 95, 16, 4, 8)
+    draw.text((bx+115, ry), "LOAD: 4%", fill=_GOLD, font=_font_sm)
+    ry += 26
+    _seg_bar(draw, bx+10, ry, 95, 16, 6, 8)
+    draw.text((bx+115, ry), "PWR: 18W", fill=_GOLD, font=_font_sm)
+    # Box 3: RAM/Disk
+    by2 = 5 + bh + gap
+    _cyber_box(draw, 5, by2, bw, bh)
+    draw.text((15, by2+8), "RAM: 22/32GB", fill=_BRIGHT, font=_font_med)
+    draw.text((15, by2+30), "USED: 69%", fill=_GOLD, font=_font_sm)
+    _seg_bar(draw, 15, by2+52, bw-25, 18, 69, 12)
+    draw.text((15, by2+80), "DISK: 67% | 286GB FREE", fill=_GOLD, font=_font_sm)
+    # Box 4: System
+    _cyber_box(draw, bx, by2, bw, bh)
+    draw.text((bx+10, by2+8), "SYS", fill=_BRIGHT, font=_font_med)
+    draw.text((bx+10, by2+32), "FAN:", fill=_DIM, font=_font_sm)
+    draw.text((bx+55, by2+32), "0%", fill=_GOLD, font=_font_sm)
+    draw.text((bx+10, by2+56), "NET:", fill=_DIM, font=_font_sm)
+    draw.text((bx+55, by2+56), "15.9GB", fill=_GOLD, font=_font_sm)
+    draw.text((bx+10, by2+80), "UP:", fill=_DIM, font=_font_sm)
+    draw.text((bx+55, by2+80), "2D 22H", fill=_BRIGHT, font=_font_med)
+    _nav_bar(draw, page_num, total)
+    return img
+
+def render_pihole_preview(page_num=2, total=6):
+    img = Image.new("RGB", (480, 320), _BG)
+    draw = ImageDraw.Draw(img)
+    bw = (480 - 30) // 2
+    bh = (_NAV_Y - 20) // 2
+    gap = 10
+    # Queries
+    _cyber_box(draw, 5, 5, bw, bh)
+    draw.text((15, 13), "QUERIES", fill=_BRIGHT, font=_font_med)
+    draw.text((15, 37), "84,231", fill=_CYAN, font=_font_big)
+    draw.text((15, 70), "12 CLIENTS", fill=_GOLD, font=_font_sm)
+    # Blocked
+    bx = 5 + bw + gap
+    _cyber_box(draw, bx, 5, bw, bh)
+    draw.text((bx+10, 13), "BLOCKED", fill=_BRIGHT, font=_font_med)
+    draw.text((bx+10, 37), "6,142", fill=_RED, font=_font_big)
+    _seg_bar(draw, bx+10, 70, 120, 14, 7, 10)
+    draw.text((bx+140, 70), "7.3%", fill=_GOLD, font=_font_sm)
+    # Traffic
+    by2 = 5 + bh + gap
+    _cyber_box(draw, 5, by2, bw, bh)
+    draw.text((15, by2+8), "TRAFFIC", fill=_BRIGHT, font=_font_med)
+    draw.text((15, by2+35), "CACHED:", fill=_GOLD, font=_font_sm)
+    draw.text((85, by2+35), "31,482", fill=_PURPLE, font=_font_sm)
+    draw.text((15, by2+59), "FWD:", fill=_GOLD, font=_font_sm)
+    draw.text((85, by2+59), "46,607", fill=_CYAN, font=_font_sm)
+    # Blocklist
+    _cyber_box(draw, bx, by2, bw, bh)
+    draw.text((bx+10, by2+8), "BLOCKLIST", fill=_BRIGHT, font=_font_med)
+    draw.text((bx+10, by2+35), "198,432", fill=_GREEN, font=_font_med)
+    draw.text((bx+10, by2+58), "DOMAINS", fill=_GOLD, font=_font_sm)
+    _nav_bar(draw, page_num, total)
+    return img
+
+def render_docker_preview(page_num=3, total=6):
+    img = Image.new("RGB", (480, 320), _BG)
+    draw = ImageDraw.Draw(img)
+    containers = [
+        ("pihole", "pihole", True), ("portainer", "portainer-ce", True),
+        ("nginx", "nginx", True), ("homebridge", "homebridge", True),
+        ("grafana", "grafana-oss", True), ("prometheus", "prometheus", True),
+        ("cadvisor", "cadvisor", True), ("watchtower", "watchtower", True),
+        ("redis", "redis", False), ("postgres", "postgres", True),
+        ("mqtt", "mosquitto", True), ("zigbee2mqtt", "zigbee2mqtt", True),
+    ]
+    cols, rows = 3, 4
+    margin = 5
+    cw = (480 - margin * (cols + 1)) // cols
+    ch = (_NAV_Y - 5 - margin * (rows + 1)) // rows
+    for i, (name, image, up) in enumerate(containers):
+        row, col = i // cols, i % cols
+        x = margin + col * (cw + margin)
+        y = 5 + row * (ch + margin)
+        sc = _GREEN if up else _RED
+        draw.rectangle([x, y, x+cw, y+ch], fill=(15, 15, 25), outline=_ORANGE, width=2)
+        draw.rectangle([x+2, y+2, x+5, y+ch-2], fill=sc)
+        draw.text((x+10, y+4), name, fill=_BRIGHT, font=_font_sm)
+        draw.text((x+10, y+20), image, fill=(100, 80, 30), font=_font_tiny)
+        if up:
+            draw.text((x+cw-32, y+ch-14), "3d", fill=sc, font=_font_tiny)
+    _nav_bar(draw, page_num, total)
+    return img
+
+DASHBOARD_PREVIEW_RENDERERS = {
+    "system_monitor": render_system_preview,
+    "windows_pc": render_windows_preview,
+    "pihole": render_pihole_preview,
+    "docker": render_docker_preview,
+}
 
 # Pi connection
 PI_HOST = "192.168.1.112"
@@ -837,31 +1085,26 @@ class StreamDeckEditor:
 
         page = self.config["pages"][self.current_page]
 
-        # Dashboard pages: show info label instead of button grid
+        # Dashboard pages: render cyberpunk preview
         if page.get("type") == "dashboard":
             self.button_rects = []
             dashboard_type = page.get("dashboard_type", "unknown")
             display_name = DASHBOARD_TYPES.get(dashboard_type, {}).get("name", dashboard_type)
             refresh = page.get("refresh_interval", 2)
+            total_pages = len(self.config['pages'])
 
-            # Draw dashboard placeholder
-            self.preview_canvas.create_rectangle(40, 40, 440, 200, fill="#1e1e3a", outline="#4a4a8a", width=2)
-            self.preview_canvas.create_text(240, 90, text=display_name,
-                                            fill="#9b59b6", font=("Segoe UI", 20, "bold"))
-            self.preview_canvas.create_text(240, 125, text="Dashboard Page",
-                                            fill="#888", font=("Segoe UI", 12))
-            self.preview_canvas.create_text(240, 155, text=f"Refresh: {refresh}s",
-                                            fill="#666", font=("Segoe UI", 10))
-            self.preview_canvas.create_text(240, 180, text="(rendered on Pi at runtime)",
-                                            fill="#555", font=("Segoe UI", 9, "italic"))
+            renderer = DASHBOARD_PREVIEW_RENDERERS.get(dashboard_type)
+            if renderer:
+                preview_img = renderer(self.current_page, total_pages)
+                photo = ImageTk.PhotoImage(preview_img)
+                self.photos.append(photo)
+                self.preview_canvas.create_image(0, 0, anchor=tk.NW, image=photo)
+            else:
+                self.preview_canvas.create_rectangle(40, 40, 440, 200, fill="#1e1e3a", outline="#4a4a8a", width=2)
+                self.preview_canvas.create_text(240, 120, text=display_name,
+                                                fill="#9b59b6", font=("Segoe UI", 20, "bold"))
 
-            # Navigation bar
-            nav_y = 320 - 70
-            self.preview_canvas.create_rectangle(0, nav_y, 480, 320, fill="#282840", outline="")
-            page_text = f"{self.current_page + 1}/{len(self.config['pages'])}"
-            self.preview_canvas.create_text(240, nav_y + 35, text=page_text,
-                                            fill="#aaa", font=("Segoe UI", 14))
-            self.page_label.config(text=f"Page {self.current_page + 1}/{len(self.config['pages'])} - {display_name}")
+            self.page_label.config(text=f"Page {self.current_page + 1}/{total_pages} - {display_name}")
 
             # Clear button editor for dashboard pages
             for widget in self.editor_frame.winfo_children():

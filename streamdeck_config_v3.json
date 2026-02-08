@@ -114,28 +114,28 @@
       "type": "button",
       "buttons": [
         {
-          "label": "vscode",
-          "action": "",
+          "label": "",
+          "action": "custom_app",
           "color": [
             60,
             60,
             80
           ],
           "icon": null,
-          "background": "streamdeck_icons\\cropped\\code.png",
+          "background": "streamdeck_icons\\code.png",
           "app_path": "C:/Users/Cem/AppData/Local/Programs/Microsoft VS Code/Code.exe"
         },
         {
           "label": "",
-          "action": "",
+          "action": "custom_app",
           "color": [
             60,
             60,
             80
           ],
           "icon": null,
-          "background": null,
-          "app_path": null
+          "background": "streamdeck_icons\\voin.png",
+          "app_path": "F:/SteamLibrary/steamapps/common/VOIN/VOIN.exe"
         },
         {
           "label": "",
