@@ -2,7 +2,7 @@
 """
 Windows Stream Deck Agent
 Bu scripti Windows PC'de çalıştır.
-Gerekli: pip install flask pyautogui
+Gerekli: pip install flask pyautogui psutil
 """
 
 from flask import Flask, jsonify, request
@@ -11,6 +11,7 @@ import pyautogui
 import subprocess
 import os
 import json
+import time
 
 app = Flask(__name__)
 
@@ -28,8 +29,8 @@ ACTIONS = {
     "volume_mute": lambda: pyautogui.press("volumemute"),
     
     # OBS (varsayılan kısayollar)
-    "obs_record": lambda: pyautogui.hotkey("ctrl", "shift", "r"),  # OBS kayıt başlat/durdur
-    "obs_stream": lambda: pyautogui.hotkey("ctrl", "shift", "s"),  # OBS yayın başlat/durdur
+    "obs_record": lambda: pyautogui.hotkey("ctrl", "shift", "r"),
+    "obs_stream": lambda: pyautogui.hotkey("ctrl", "shift", "s"),
     "obs_scene1": lambda: pyautogui.hotkey("ctrl", "shift", "1"),
     "obs_scene2": lambda: pyautogui.hotkey("ctrl", "shift", "2"),
     
@@ -84,7 +85,7 @@ def launch_app():
 
 @app.route("/system/stats")
 def system_stats():
-    """Return Windows system stats (CPU, RAM, Disk, GPU)"""
+    """Return Windows system stats (CPU, RAM, Disk, GPU, Temps, Fans)"""
     import psutil
     stats = {}
     
@@ -92,41 +93,76 @@ def system_stats():
         # CPU
         stats['cpu_percent'] = psutil.cpu_percent(interval=0.5)
         stats['cpu_count'] = psutil.cpu_count()
-        stats['cpu_freq'] = psutil.cpu_freq().current if psutil.cpu_freq() else 0
+        freq = psutil.cpu_freq()
+        stats['cpu_freq_current'] = round(freq.current, 0) if freq else 0
+        stats['cpu_freq_max'] = round(freq.max, 0) if freq else 0
+        
+        # CPU per-core usage
+        stats['cpu_per_core'] = psutil.cpu_percent(interval=0.1, percpu=True)
         
         # RAM
         mem = psutil.virtual_memory()
         stats['ram_percent'] = mem.percent
         stats['ram_used_gb'] = round(mem.used / (1024**3), 1)
         stats['ram_total_gb'] = round(mem.total / (1024**3), 1)
+        stats['ram_available_gb'] = round(mem.available / (1024**3), 1)
         
         # Disk (C:)
         disk = psutil.disk_usage('C:\\')
         stats['disk_percent'] = round(disk.percent, 1)
         stats['disk_used_gb'] = round(disk.used / (1024**3), 0)
         stats['disk_total_gb'] = round(disk.total / (1024**3), 0)
+        stats['disk_free_gb'] = round(disk.free / (1024**3), 0)
         
-        # GPU (nvidia-smi)
+        # Network
+        net = psutil.net_io_counters()
+        stats['net_sent_gb'] = round(net.bytes_sent / (1024**3), 2)
+        stats['net_recv_gb'] = round(net.bytes_recv / (1024**3), 2)
+        
+        # GPU (nvidia-smi with extended info)
         try:
             gpu_result = subprocess.run(
-                ['nvidia-smi', '--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu', '--format=csv,noheader,nounits'],
+                ['nvidia-smi', '--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,fan.speed,power.draw,power.limit,clocks.current.graphics,name', '--format=csv,noheader,nounits'],
                 capture_output=True, text=True, timeout=5
             )
             if gpu_result.returncode == 0:
-                parts = gpu_result.stdout.strip().split(', ')
+                parts = [p.strip() for p in gpu_result.stdout.strip().split(', ')]
                 stats['gpu_percent'] = int(parts[0])
                 stats['gpu_mem_used_mb'] = int(parts[1])
                 stats['gpu_mem_total_mb'] = int(parts[2])
                 stats['gpu_temp'] = int(parts[3])
+                stats['gpu_fan_percent'] = int(parts[4]) if parts[4] != '[N/A]' else 0
+                stats['gpu_power_w'] = round(float(parts[5]), 1) if parts[5] != '[N/A]' else 0
+                stats['gpu_power_limit_w'] = round(float(parts[6]), 1) if parts[6] != '[N/A]' else 0
+                stats['gpu_clock_mhz'] = int(parts[7]) if parts[7] != '[N/A]' else 0
+                stats['gpu_name'] = parts[8] if len(parts) > 8 else 'Unknown'
             else:
                 stats['gpu_percent'] = 0
                 stats['gpu_temp'] = 0
+                stats['gpu_fan_percent'] = 0
         except:
             stats['gpu_percent'] = 0
             stats['gpu_temp'] = 0
+            stats['gpu_fan_percent'] = 0
+        
+        # CPU Temperature (Windows - requires OpenHardwareMonitor running)
+        try:
+            import wmi
+            w = wmi.WMI(namespace="root\\OpenHardwareMonitor")
+            sensors = w.Sensor()
+            for sensor in sensors:
+                if sensor.SensorType == 'Temperature' and 'CPU' in sensor.Name:
+                    stats['cpu_temp'] = round(sensor.Value, 1)
+                    break
+        except:
+            stats['cpu_temp'] = 0
         
         # Uptime
-        stats['uptime_hours'] = round((psutil.time.time() - psutil.boot_time()) / 3600, 1)
+        stats['uptime_hours'] = round((time.time() - psutil.boot_time()) / 3600, 1)
+        stats['uptime_days'] = round((time.time() - psutil.boot_time()) / 86400, 2)
+        
+        # Process count
+        stats['process_count'] = len(psutil.pids())
         
         return jsonify(stats)
     except Exception as e:
@@ -169,21 +205,18 @@ def docker_containers():
 def docker_stats():
     """Return Docker system stats"""
     try:
-        # Container count
         ps_result = subprocess.run(
             ['docker', 'ps', '-q'],
             capture_output=True, text=True, timeout=5
         )
         running = len([x for x in ps_result.stdout.strip().split('\n') if x])
         
-        # All containers count
         ps_all = subprocess.run(
             ['docker', 'ps', '-aq'],
             capture_output=True, text=True, timeout=5
         )
         total = len([x for x in ps_all.stdout.strip().split('\n') if x])
         
-        # Images count
         images = subprocess.run(
             ['docker', 'images', '-q'],
             capture_output=True, text=True, timeout=5
@@ -205,6 +238,6 @@ if __name__ == "__main__":
     print("=" * 50)
     print(f"Listening on http://0.0.0.0:5555")
     print(f"Available actions: {len(ACTIONS)}")
-    print("Endpoints: /docker/containers, /docker/stats")
+    print("Endpoints: /system/stats, /docker/containers, /docker/stats")
     print("=" * 50)
     app.run(host="0.0.0.0", port=5555, debug=False)
