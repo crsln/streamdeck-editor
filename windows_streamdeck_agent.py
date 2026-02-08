@@ -145,34 +145,35 @@ def system_stats():
             stats['gpu_temp'] = 0
             stats['gpu_fan_percent'] = 0
         
-        # CPU Temperature (Windows - try LibreHardwareMonitor first, then OpenHardwareMonitor)
+        # CPU Temperature from LibreHardwareMonitor HTTP API (port 8085)
         stats['cpu_temp'] = 0
         try:
-            import wmi
-            # Try LibreHardwareMonitor first
-            try:
-                w = wmi.WMI(namespace="root\\LibreHardwareMonitor")
-                sensors = w.Sensor()
-                for sensor in sensors:
-                    if sensor.SensorType == 'Temperature' and 'CPU' in sensor.Name and 'Package' in sensor.Name:
-                        stats['cpu_temp'] = round(sensor.Value, 1)
-                        break
-                    elif sensor.SensorType == 'Temperature' and 'CPU' in sensor.Name and stats['cpu_temp'] == 0:
-                        stats['cpu_temp'] = round(sensor.Value, 1)
-            except:
-                pass
+            lhm_resp = requests.get('http://localhost:8085/data.json', timeout=2)
+            lhm_data = lhm_resp.json()
             
-            # Fallback to OpenHardwareMonitor
-            if stats['cpu_temp'] == 0:
-                try:
-                    w = wmi.WMI(namespace="root\\OpenHardwareMonitor")
-                    sensors = w.Sensor()
-                    for sensor in sensors:
-                        if sensor.SensorType == 'Temperature' and 'CPU' in sensor.Name:
-                            stats['cpu_temp'] = round(sensor.Value, 1)
-                            break
-                except:
-                    pass
+            def find_cpu_temp(node):
+                """Recursively search for CPU temperature in LHM JSON"""
+                if isinstance(node, dict):
+                    # Check if this is a CPU temp sensor
+                    text = node.get('Text', '')
+                    if 'CPU' in text and node.get('Min') and 'Core' in text:
+                        try:
+                            # Value format: "44 °C" or similar
+                            val = node.get('Value', '0')
+                            if '°C' in str(val):
+                                return float(val.replace('°C', '').strip())
+                        except:
+                            pass
+                    # Check children
+                    for child in node.get('Children', []):
+                        result = find_cpu_temp(child)
+                        if result:
+                            return result
+                return None
+            
+            temp = find_cpu_temp(lhm_data)
+            if temp:
+                stats['cpu_temp'] = round(temp, 1)
         except:
             pass
         
