@@ -145,17 +145,36 @@ def system_stats():
             stats['gpu_temp'] = 0
             stats['gpu_fan_percent'] = 0
         
-        # CPU Temperature (Windows - requires OpenHardwareMonitor running)
+        # CPU Temperature (Windows - try LibreHardwareMonitor first, then OpenHardwareMonitor)
+        stats['cpu_temp'] = 0
         try:
             import wmi
-            w = wmi.WMI(namespace="root\\OpenHardwareMonitor")
-            sensors = w.Sensor()
-            for sensor in sensors:
-                if sensor.SensorType == 'Temperature' and 'CPU' in sensor.Name:
-                    stats['cpu_temp'] = round(sensor.Value, 1)
-                    break
+            # Try LibreHardwareMonitor first
+            try:
+                w = wmi.WMI(namespace="root\\LibreHardwareMonitor")
+                sensors = w.Sensor()
+                for sensor in sensors:
+                    if sensor.SensorType == 'Temperature' and 'CPU' in sensor.Name and 'Package' in sensor.Name:
+                        stats['cpu_temp'] = round(sensor.Value, 1)
+                        break
+                    elif sensor.SensorType == 'Temperature' and 'CPU' in sensor.Name and stats['cpu_temp'] == 0:
+                        stats['cpu_temp'] = round(sensor.Value, 1)
+            except:
+                pass
+            
+            # Fallback to OpenHardwareMonitor
+            if stats['cpu_temp'] == 0:
+                try:
+                    w = wmi.WMI(namespace="root\\OpenHardwareMonitor")
+                    sensors = w.Sensor()
+                    for sensor in sensors:
+                        if sensor.SensorType == 'Temperature' and 'CPU' in sensor.Name:
+                            stats['cpu_temp'] = round(sensor.Value, 1)
+                            break
+                except:
+                    pass
         except:
-            stats['cpu_temp'] = 0
+            pass
         
         # Uptime
         stats['uptime_hours'] = round((time.time() - psutil.boot_time()) / 3600, 1)
