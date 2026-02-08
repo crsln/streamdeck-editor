@@ -80,6 +80,58 @@ def launch_app():
             return f"Error: {e}", 500
     return "Error: no path provided", 400
 
+# ============== SYSTEM STATS ENDPOINT ==============
+
+@app.route("/system/stats")
+def system_stats():
+    """Return Windows system stats (CPU, RAM, Disk, GPU)"""
+    import psutil
+    stats = {}
+    
+    try:
+        # CPU
+        stats['cpu_percent'] = psutil.cpu_percent(interval=0.5)
+        stats['cpu_count'] = psutil.cpu_count()
+        stats['cpu_freq'] = psutil.cpu_freq().current if psutil.cpu_freq() else 0
+        
+        # RAM
+        mem = psutil.virtual_memory()
+        stats['ram_percent'] = mem.percent
+        stats['ram_used_gb'] = round(mem.used / (1024**3), 1)
+        stats['ram_total_gb'] = round(mem.total / (1024**3), 1)
+        
+        # Disk (C:)
+        disk = psutil.disk_usage('C:\\')
+        stats['disk_percent'] = round(disk.percent, 1)
+        stats['disk_used_gb'] = round(disk.used / (1024**3), 0)
+        stats['disk_total_gb'] = round(disk.total / (1024**3), 0)
+        
+        # GPU (nvidia-smi)
+        try:
+            gpu_result = subprocess.run(
+                ['nvidia-smi', '--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu', '--format=csv,noheader,nounits'],
+                capture_output=True, text=True, timeout=5
+            )
+            if gpu_result.returncode == 0:
+                parts = gpu_result.stdout.strip().split(', ')
+                stats['gpu_percent'] = int(parts[0])
+                stats['gpu_mem_used_mb'] = int(parts[1])
+                stats['gpu_mem_total_mb'] = int(parts[2])
+                stats['gpu_temp'] = int(parts[3])
+            else:
+                stats['gpu_percent'] = 0
+                stats['gpu_temp'] = 0
+        except:
+            stats['gpu_percent'] = 0
+            stats['gpu_temp'] = 0
+        
+        # Uptime
+        stats['uptime_hours'] = round((psutil.time.time() - psutil.boot_time()) / 3600, 1)
+        
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
 # ============== DOCKER ENDPOINTS ==============
 
 @app.route("/docker/containers")
