@@ -1489,8 +1489,10 @@ MAX_GIF_FRAMES = 30
 def load_gif_frames(path, size, use_cover=False):
     if not path:
         return None
-    filename = path.split("/")[-1].split(chr(92))[-1]
-    pi_path = os.path.join(ICONS_DIR, filename)
+    parts = path.replace(chr(92), "/").split("/")
+    idx = next((i for i, p in enumerate(parts) if p == "streamdeck_icons"), -1)
+    rel = "/".join(parts[idx+1:]) if idx >= 0 else parts[-1]
+    pi_path = os.path.join(ICONS_DIR, rel)
     if not os.path.exists(pi_path):
         return None
     if not is_animated_ext(pi_path):
@@ -1514,8 +1516,10 @@ def load_gif_frames(path, size, use_cover=False):
 def load_image(path, size, frame_idx=0, use_cover=False):
     if not path:
         return None
-    filename = path.split("/")[-1].split(chr(92))[-1]
-    pi_path = os.path.join(ICONS_DIR, filename)
+    parts = path.replace(chr(92), "/").split("/")
+    idx = next((i for i, p in enumerate(parts) if p == "streamdeck_icons"), -1)
+    rel = "/".join(parts[idx+1:]) if idx >= 0 else parts[-1]
+    pi_path = os.path.join(ICONS_DIR, rel)
     if not os.path.exists(pi_path):
         return None
 
@@ -1831,12 +1835,23 @@ while True:
             except:
                 pass
 
-            # Upload icons
+            # Upload icons (recursively including subdirectories)
             if os.path.exists(LOCAL_ICONS_DIR):
-                for filename in os.listdir(LOCAL_ICONS_DIR):
-                    local_path = os.path.join(LOCAL_ICONS_DIR, filename)
-                    remote_path = f"{PI_ICONS_DIR}/{filename}"
-                    sftp.put(local_path, remote_path)
+                for root_dir, dirs, files in os.walk(LOCAL_ICONS_DIR):
+                    rel_root = os.path.relpath(root_dir, LOCAL_ICONS_DIR)
+                    if rel_root != ".":
+                        remote_sub = f"{PI_ICONS_DIR}/{rel_root}".replace("\\", "/")
+                        try:
+                            sftp.mkdir(remote_sub)
+                        except:
+                            pass
+                    for filename in files:
+                        local_path = os.path.join(root_dir, filename)
+                        if rel_root == ".":
+                            remote_path = f"{PI_ICONS_DIR}/{filename}"
+                        else:
+                            remote_path = f"{PI_ICONS_DIR}/{rel_root}/{filename}".replace("\\", "/")
+                        sftp.put(local_path, remote_path)
 
             # Upload script
             script = self.generate_pi_script()

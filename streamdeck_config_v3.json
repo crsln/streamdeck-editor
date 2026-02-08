@@ -19,7 +19,7 @@
             113
           ],
           "icon": null,
-          "background": "streamdeck_icons\\giphy3.webp",
+          "background": "streamdeck_icons\\cropped\\play.png",
           "app_path": null
         },
         {
@@ -31,7 +31,7 @@
             219
           ],
           "icon": null,
-          "background": "streamdeck_icons\\200.webp",
+          "background": "streamdeck_icons\\cropped\\next.png",
           "app_path": null
         },
         {
@@ -43,7 +43,7 @@
             182
           ],
           "icon": null,
-          "background": "streamdeck_icons\\In Love Cat GIF.gif",
+          "background": "streamdeck_icons\\cropped\\undo.png",
           "app_path": null
         },
         {
@@ -55,7 +55,7 @@
             60
           ],
           "icon": null,
-          "background": "streamdeck_icons\\bbc classics GIF by.gif",
+          "background": "streamdeck_icons\\cropped\\volume.png",
           "app_path": null
         },
         {
@@ -67,7 +67,7 @@
             80
           ],
           "icon": null,
-          "background": "streamdeck_icons\\Lion Roar GIF by Bro.gif",
+          "background": "streamdeck_icons\\cropped\\brave.png",
           "app_path": "C:/Program Files/BraveSoftware/Brave-Browser/Application/brave.exe"
         },
         {
@@ -79,7 +79,7 @@
             80
           ],
           "icon": null,
-          "background": "streamdeck_icons\\Happy Big Lebowski G.gif",
+          "background": "streamdeck_icons\\cropped\\spotify.png",
           "app_path": "C:/Users/Cem/Desktop/Spotify.lnk"
         }
       ]
@@ -96,7 +96,7 @@
             80
           ],
           "icon": null,
-          "background": null,
+          "background": "streamdeck_icons\\cropped\\code.png",
           "app_path": "C:/Users/Cem/AppData/Local/Programs/Microsoft VS Code/Code.exe"
         },
         {

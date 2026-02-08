@@ -9,7 +9,7 @@
       113
     ],
     "icon": null,
-    "background": null,
+    "background": "streamdeck_icons\\cropped\\play.png",
     "app_path": null
   },
   {
@@ -22,7 +22,7 @@
       219
     ],
     "icon": null,
-    "background": null,
+    "background": "streamdeck_icons\\cropped\\next.png",
     "app_path": null
   },
   {
@@ -35,7 +35,7 @@
       182
     ],
     "icon": null,
-    "background": null,
+    "background": "streamdeck_icons\\cropped\\undo.png",
     "app_path": null
   },
   {
@@ -48,7 +48,7 @@
       15
     ],
     "icon": null,
-    "background": null,
+    "background": "streamdeck_icons\\cropped\\volume.png",
     "app_path": null
   },
   {
@@ -61,7 +61,7 @@
       34
     ],
     "icon": null,
-    "background": null,
+    "background": "streamdeck_icons\\cropped\\volume.png",
     "app_path": null
   },
   {
@@ -74,7 +74,7 @@
       60
     ],
     "icon": null,
-    "background": null,
+    "background": "streamdeck_icons\\cropped\\volume.png",
     "app_path": null
   },
   {
@@ -87,7 +87,7 @@
       43
     ],
     "icon": null,
-    "background": null,
+    "background": "streamdeck_icons\\cropped\\stop.png",
     "app_path": null
   },
   {
@@ -100,7 +100,7 @@
       173
     ],
     "icon": null,
-    "background": null,
+    "background": "streamdeck_icons\\cropped\\wifi.png",
     "app_path": null
   },
   {
@@ -113,7 +113,7 @@
       80
     ],
     "icon": null,
-    "background": null,
+    "background": "streamdeck_icons\\cropped\\key.png",
     "app_path": null
   },
   {
@@ -126,7 +126,7 @@
       185
     ],
     "icon": null,
-    "background": null,
+    "background": "streamdeck_icons\\cropped\\gallery.png",
     "app_path": null
   },
   {
@@ -139,7 +139,7 @@
       96
     ],
     "icon": null,
-    "background": null,
+    "background": "streamdeck_icons\\cropped\\clipboard.png",
     "app_path": null
   },
   {
@@ -152,7 +152,7 @@
       0
     ],
     "icon": null,
-    "background": null,
+    "background": "streamdeck_icons\\cropped\\clipboard.png",
     "app_path": null
   },
   {
@@ -165,7 +165,7 @@
       141
     ],
     "icon": null,
-    "background": null,
+    "background": "streamdeck_icons\\cropped\\undo.png",
     "app_path": null
   },
   {
@@ -177,7 +177,7 @@
       113
     ],
     "icon": null,
-    "background": "streamdeck_icons\\giphy3.webp",
+    "background": "streamdeck_icons\\cropped\\play.png",
     "app_path": null,
     "name": "play2"
   },
@@ -190,7 +190,7 @@
       80
     ],
     "icon": null,
-    "background": "streamdeck_icons\\Happy Big Lebowski G.gif",
+    "background": "streamdeck_icons\\cropped\\spotify.png",
     "app_path": "C:/Users/Cem/Desktop/Spotify.lnk",
     "name": "sptfy"
   }
