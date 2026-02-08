@@ -5,10 +5,12 @@ Bu scripti Windows PC'de çalıştır.
 Gerekli: pip install flask pyautogui
 """
 
-from flask import Flask
+from flask import Flask, jsonify, request
+from urllib.parse import unquote
 import pyautogui
 import subprocess
 import os
+import json
 
 app = Flask(__name__)
 
@@ -66,8 +68,6 @@ def do_action(action_name):
 
 @app.route("/launch")
 def launch_app():
-    from flask import request
-    from urllib.parse import unquote
     path = request.args.get("path", "")
     if path:
         path = unquote(path)
@@ -80,11 +80,79 @@ def launch_app():
             return f"Error: {e}", 500
     return "Error: no path provided", 400
 
+# ============== DOCKER ENDPOINTS ==============
+
+@app.route("/docker/containers")
+def docker_containers():
+    """Return running Docker containers as JSON"""
+    try:
+        result = subprocess.run(
+            ['docker', 'ps', '--format', '{{json .}}'],
+            capture_output=True, text=True, timeout=10
+        )
+        containers = []
+        for line in result.stdout.strip().split('\n'):
+            if line:
+                try:
+                    c = json.loads(line)
+                    containers.append({
+                        'name': c.get('Names', ''),
+                        'image': c.get('Image', ''),
+                        'status': c.get('Status', ''),
+                        'ports': c.get('Ports', ''),
+                        'state': c.get('State', ''),
+                        'id': c.get('ID', '')[:12]
+                    })
+                except json.JSONDecodeError:
+                    pass
+        return jsonify({'containers': containers, 'count': len(containers)})
+    except subprocess.TimeoutExpired:
+        return jsonify({'error': 'Docker command timed out', 'containers': []})
+    except FileNotFoundError:
+        return jsonify({'error': 'Docker not found', 'containers': []})
+    except Exception as e:
+        return jsonify({'error': str(e), 'containers': []})
+
+@app.route("/docker/stats")
+def docker_stats():
+    """Return Docker system stats"""
+    try:
+        # Container count
+        ps_result = subprocess.run(
+            ['docker', 'ps', '-q'],
+            capture_output=True, text=True, timeout=5
+        )
+        running = len([x for x in ps_result.stdout.strip().split('\n') if x])
+        
+        # All containers count
+        ps_all = subprocess.run(
+            ['docker', 'ps', '-aq'],
+            capture_output=True, text=True, timeout=5
+        )
+        total = len([x for x in ps_all.stdout.strip().split('\n') if x])
+        
+        # Images count
+        images = subprocess.run(
+            ['docker', 'images', '-q'],
+            capture_output=True, text=True, timeout=5
+        )
+        image_count = len([x for x in images.stdout.strip().split('\n') if x])
+        
+        return jsonify({
+            'running': running,
+            'total': total,
+            'stopped': total - running,
+            'images': image_count
+        })
+    except Exception as e:
+        return jsonify({'error': str(e), 'running': 0, 'total': 0, 'images': 0})
+
 if __name__ == "__main__":
     print("=" * 50)
     print("  STREAM DECK AGENT")
     print("=" * 50)
     print(f"Listening on http://0.0.0.0:5555")
     print(f"Available actions: {len(ACTIONS)}")
+    print("Endpoints: /docker/containers, /docker/stats")
     print("=" * 50)
     app.run(host="0.0.0.0", port=5555, debug=False)
