@@ -1005,7 +1005,9 @@ class StreamDeckEditor:
         if path:
             filename = os.path.basename(path)
             dest = os.path.join(LOCAL_ICONS_DIR, filename)
-            shutil.copy(path, dest)
+            os.makedirs(LOCAL_ICONS_DIR, exist_ok=True)
+            if os.path.abspath(path) != os.path.abspath(dest):
+                shutil.copy(path, dest)
             self.selected_background = dest
             self.bg_label.config(text=filename)
 
@@ -1018,7 +1020,9 @@ class StreamDeckEditor:
         if path:
             filename = os.path.basename(path)
             dest = os.path.join(LOCAL_ICONS_DIR, filename)
-            shutil.copy(path, dest)
+            os.makedirs(LOCAL_ICONS_DIR, exist_ok=True)
+            if os.path.abspath(path) != os.path.abspath(dest):
+                shutil.copy(path, dest)
             self.selected_icon = dest
             self.icon_label.config(text=filename)
 
