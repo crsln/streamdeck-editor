@@ -13,6 +13,13 @@ import os
 import json
 import time
 import requests
+import sys
+import asyncio
+import threading
+import websockets
+
+# Hide subprocess console windows on Windows
+CREATE_NO_WINDOW = 0x08000000 if sys.platform == 'win32' else 0
 
 app = Flask(__name__)
 
@@ -82,14 +89,13 @@ def launch_app():
             return f"Error: {e}", 500
     return "Error: no path provided", 400
 
-# ============== SYSTEM STATS ENDPOINT ==============
+# ============== DATA COLLECTION FUNCTIONS ==============
 
-@app.route("/system/stats")
-def system_stats():
-    """Return Windows system stats (CPU, RAM, Disk, GPU, Temps, Fans)"""
-    import psutil
+import psutil
+
+def collect_system_stats():
+    """Collect Windows system stats (CPU, RAM, Disk, GPU, Temps, Fans)"""
     stats = {}
-    
     try:
         # CPU
         stats['cpu_percent'] = psutil.cpu_percent(interval=0.5)
@@ -97,34 +103,34 @@ def system_stats():
         freq = psutil.cpu_freq()
         stats['cpu_freq_current'] = round(freq.current, 0) if freq else 0
         stats['cpu_freq_max'] = round(freq.max, 0) if freq else 0
-        
+
         # CPU per-core usage
         stats['cpu_per_core'] = psutil.cpu_percent(interval=0.1, percpu=True)
-        
+
         # RAM
         mem = psutil.virtual_memory()
         stats['ram_percent'] = mem.percent
         stats['ram_used_gb'] = round(mem.used / (1024**3), 1)
         stats['ram_total_gb'] = round(mem.total / (1024**3), 1)
         stats['ram_available_gb'] = round(mem.available / (1024**3), 1)
-        
+
         # Disk (C:)
         disk = psutil.disk_usage('C:\\')
         stats['disk_percent'] = round(disk.percent, 1)
         stats['disk_used_gb'] = round(disk.used / (1024**3), 0)
         stats['disk_total_gb'] = round(disk.total / (1024**3), 0)
         stats['disk_free_gb'] = round(disk.free / (1024**3), 0)
-        
+
         # Network
         net = psutil.net_io_counters()
         stats['net_sent_gb'] = round(net.bytes_sent / (1024**3), 2)
         stats['net_recv_gb'] = round(net.bytes_recv / (1024**3), 2)
-        
+
         # GPU (nvidia-smi with extended info)
         try:
             gpu_result = subprocess.run(
                 ['nvidia-smi', '--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,fan.speed,power.draw,power.limit,clocks.current.graphics,name', '--format=csv,noheader,nounits'],
-                capture_output=True, text=True, timeout=5
+                capture_output=True, text=True, timeout=5, creationflags=CREATE_NO_WINDOW
             )
             if gpu_result.returncode == 0:
                 parts = [p.strip() for p in gpu_result.stdout.strip().split(', ')]
@@ -145,59 +151,75 @@ def system_stats():
             stats['gpu_percent'] = 0
             stats['gpu_temp'] = 0
             stats['gpu_fan_percent'] = 0
-        
+
         # CPU Temperature from LibreHardwareMonitor HTTP API (port 8085)
         stats['cpu_temp'] = 0
+        stats['cpu_fan_rpm'] = 0
         try:
             lhm_resp = requests.get('http://localhost:8085/data.json', timeout=2)
             lhm_data = lhm_resp.json()
-            
+
             def find_cpu_temp(node):
                 """Recursively search for CPU temperature in LHM JSON"""
                 if isinstance(node, dict):
-                    # Check if this is a CPU temp sensor
                     text = node.get('Text', '')
                     if 'CPU' in text and node.get('Min') and 'Core' in text:
                         try:
-                            # Value format: "44 °C" or similar
                             val = node.get('Value', '0')
                             if '°C' in str(val):
                                 return float(val.replace('°C', '').strip())
                         except:
                             pass
-                    # Check children
                     for child in node.get('Children', []):
                         result = find_cpu_temp(child)
                         if result:
                             return result
                 return None
-            
+
             temp = find_cpu_temp(lhm_data)
             if temp:
                 stats['cpu_temp'] = round(temp, 1)
+
+            def find_cpu_fan(node):
+                """Recursively search for CPU fan speed in LHM JSON"""
+                if isinstance(node, dict):
+                    text = node.get('Text', '')
+                    sensor_type = node.get('Type', '')
+                    if 'Fan' in text or sensor_type == 'Fan':
+                        try:
+                            val = node.get('Value', '0')
+                            if 'RPM' in str(val):
+                                return int(float(val.replace('RPM', '').strip()))
+                        except:
+                            pass
+                    for child in node.get('Children', []):
+                        result = find_cpu_fan(child)
+                        if result:
+                            return result
+                return None
+
+            fan_rpm = find_cpu_fan(lhm_data)
+            stats['cpu_fan_rpm'] = fan_rpm if fan_rpm else 0
         except:
             pass
-        
+
         # Uptime
         stats['uptime_hours'] = round((time.time() - psutil.boot_time()) / 3600, 1)
         stats['uptime_days'] = round((time.time() - psutil.boot_time()) / 86400, 2)
-        
+
         # Process count
         stats['process_count'] = len(psutil.pids())
-        
-        return jsonify(stats)
+
+        return stats
     except Exception as e:
-        return jsonify({'error': str(e)})
+        return {'error': str(e)}
 
-# ============== DOCKER ENDPOINTS ==============
-
-@app.route("/docker/containers")
-def docker_containers():
-    """Return running Docker containers as JSON"""
+def collect_docker_data():
+    """Collect running Docker containers as dict"""
     try:
         result = subprocess.run(
             ['docker', 'ps', '--format', '{{json .}}'],
-            capture_output=True, text=True, timeout=10
+            capture_output=True, text=True, timeout=10, creationflags=CREATE_NO_WINDOW
         )
         containers = []
         for line in result.stdout.strip().split('\n'):
@@ -214,13 +236,27 @@ def docker_containers():
                     })
                 except json.JSONDecodeError:
                     pass
-        return jsonify({'containers': containers, 'count': len(containers)})
+        return {'containers': containers, 'count': len(containers)}
     except subprocess.TimeoutExpired:
-        return jsonify({'error': 'Docker command timed out', 'containers': []})
+        return {'error': 'Docker command timed out', 'containers': []}
     except FileNotFoundError:
-        return jsonify({'error': 'Docker not found', 'containers': []})
+        return {'error': 'Docker not found', 'containers': []}
     except Exception as e:
-        return jsonify({'error': str(e), 'containers': []})
+        return {'error': str(e), 'containers': []}
+
+# ============== SYSTEM STATS ENDPOINT ==============
+
+@app.route("/system/stats")
+def system_stats():
+    """Return Windows system stats (CPU, RAM, Disk, GPU, Temps, Fans)"""
+    return jsonify(collect_system_stats())
+
+# ============== DOCKER ENDPOINTS ==============
+
+@app.route("/docker/containers")
+def docker_containers():
+    """Return running Docker containers as JSON"""
+    return jsonify(collect_docker_data())
 
 @app.route("/docker/stats")
 def docker_stats():
@@ -228,19 +264,19 @@ def docker_stats():
     try:
         ps_result = subprocess.run(
             ['docker', 'ps', '-q'],
-            capture_output=True, text=True, timeout=5
+            capture_output=True, text=True, timeout=5, creationflags=CREATE_NO_WINDOW
         )
         running = len([x for x in ps_result.stdout.strip().split('\n') if x])
-        
+
         ps_all = subprocess.run(
             ['docker', 'ps', '-aq'],
-            capture_output=True, text=True, timeout=5
+            capture_output=True, text=True, timeout=5, creationflags=CREATE_NO_WINDOW
         )
         total = len([x for x in ps_all.stdout.strip().split('\n') if x])
-        
+
         images = subprocess.run(
             ['docker', 'images', '-q'],
-            capture_output=True, text=True, timeout=5
+            capture_output=True, text=True, timeout=5, creationflags=CREATE_NO_WINDOW
         )
         image_count = len([x for x in images.stdout.strip().split('\n') if x])
         
@@ -253,12 +289,73 @@ def docker_stats():
     except Exception as e:
         return jsonify({'error': str(e), 'running': 0, 'total': 0, 'images': 0})
 
+# ============== WEBSOCKET SERVER ==============
+
+WS_PORT = 5556
+WS_INTERVAL = 3  # seconds between broadcasts
+
+ws_clients = set()
+
+async def ws_handler(websocket):
+    """Handle new WebSocket connections"""
+    ws_clients.add(websocket)
+    remote = websocket.remote_address
+    print(f"[WS] Client connected: {remote}")
+    try:
+        async for _ in websocket:
+            pass  # We only push, ignore incoming messages
+    except websockets.exceptions.ConnectionClosed:
+        pass
+    finally:
+        ws_clients.discard(websocket)
+        print(f"[WS] Client disconnected: {remote}")
+
+async def ws_broadcast_loop():
+    """Collect stats every WS_INTERVAL seconds and push to all clients"""
+    while True:
+        if ws_clients:
+            try:
+                system_stats = collect_system_stats()
+                docker_data = collect_docker_data()
+                payload = json.dumps({
+                    "system_stats": system_stats,
+                    "docker_containers": docker_data
+                })
+                dead = set()
+                for client in ws_clients.copy():
+                    try:
+                        await client.send(payload)
+                    except websockets.exceptions.ConnectionClosed:
+                        dead.add(client)
+                for c in dead:
+                    ws_clients.discard(c)
+            except Exception as e:
+                print(f"[WS] Broadcast error: {e}")
+        await asyncio.sleep(WS_INTERVAL)
+
+async def ws_main():
+    """Start WebSocket server and broadcast loop"""
+    async with websockets.serve(ws_handler, "0.0.0.0", WS_PORT):
+        print(f"[WS] WebSocket server listening on ws://0.0.0.0:{WS_PORT}")
+        await ws_broadcast_loop()
+
+def run_ws_server():
+    """Run the async WebSocket server in its own event loop (called from thread)"""
+    asyncio.run(ws_main())
+
 if __name__ == "__main__":
     print("=" * 50)
     print("  STREAM DECK AGENT")
     print("=" * 50)
-    print(f"Listening on http://0.0.0.0:5555")
+    print(f"HTTP  on http://0.0.0.0:5555")
+    print(f"WS    on ws://0.0.0.0:{WS_PORT}")
     print(f"Available actions: {len(ACTIONS)}")
     print("Endpoints: /system/stats, /docker/containers, /docker/stats")
     print("=" * 50)
+
+    # Start WebSocket server in daemon thread
+    ws_thread = threading.Thread(target=run_ws_server, daemon=True)
+    ws_thread.start()
+
+    # Start Flask (blocking)
     app.run(host="0.0.0.0", port=5555, debug=False)
