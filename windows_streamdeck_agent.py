@@ -180,26 +180,29 @@ def collect_system_stats():
             if temp:
                 stats['cpu_temp'] = round(temp, 1)
 
-            def find_cpu_fan(node):
-                """Recursively search for CPU fan speed in LHM JSON"""
+            def find_all_fans(node):
+                """Recursively collect all fan RPM values from LHM JSON"""
+                results = []
                 if isinstance(node, dict):
-                    text = node.get('Text', '')
                     sensor_type = node.get('Type', '')
-                    if 'Fan' in text or sensor_type == 'Fan':
+                    if sensor_type == 'Fan':
                         try:
                             val = node.get('Value', '0')
                             if 'RPM' in str(val):
-                                return int(float(val.replace('RPM', '').strip()))
+                                rpm = int(float(val.replace('RPM', '').strip()))
+                                text = node.get('Text', '')
+                                sensor_id = node.get('SensorId', '')
+                                results.append({'name': text, 'rpm': rpm, 'id': sensor_id})
                         except:
                             pass
                     for child in node.get('Children', []):
-                        result = find_cpu_fan(child)
-                        if result:
-                            return result
-                return None
+                        results.extend(find_all_fans(child))
+                return results
 
-            fan_rpm = find_cpu_fan(lhm_data)
-            stats['cpu_fan_rpm'] = fan_rpm if fan_rpm else 0
+            all_fans = find_all_fans(lhm_data)
+            active_fans = [f for f in all_fans if f['rpm'] > 0 and 'GPU' not in f['name']]
+            stats['cpu_fan_rpm'] = active_fans[0]['rpm'] if active_fans else 0
+            stats['fans'] = all_fans
         except:
             pass
 
